@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
 import helmet from 'helmet';
@@ -103,12 +104,12 @@ async function startServer() {
   app.use('/api', verifyCsrf);
 
   // Health Check
-  app.get('/api/health', (req, res) => {
+  app.get('/api/health', async (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
   // CSRF Token Endpoint
-  app.get('/api/auth/csrf', (req, res) => {
+  app.get('/api/auth/csrf', async (req, res) => {
     if (!req.session.csrfToken) {
       req.session.csrfToken = crypto.randomBytes(24).toString('hex');
     }
@@ -116,7 +117,7 @@ async function startServer() {
   });
 
   // Current Auth Session State
-  app.get('/api/auth/me', (req, res) => {
+  app.get('/api/auth/me', async (req, res) => {
     const csrfToken = req.session.csrfToken;
     if (req.session && req.session.user) {
       return res.json({ user: req.session.user, csrfToken });
@@ -146,7 +147,7 @@ async function startServer() {
       }
 
       // Check if email exists
-      const existing = db.get('SELECT id FROM users WHERE email = ?', [cleanEmail]);
+      const existing = await db.get('SELECT id FROM users WHERE email = ?', [cleanEmail]);
       if (existing) {
         return res.status(400).json({ error: 'An account with this email already exists.' });
       }
@@ -158,7 +159,7 @@ async function startServer() {
       const newUserId = `user-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const now = new Date().toISOString();
 
-      db.run(
+      await db.run(
         `INSERT INTO users (id, name, email, phone, password_hash, role, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
         [newUserId, cleanName, cleanEmail, cleanPhone, passwordHash, assignedRole, now, now]
@@ -197,7 +198,7 @@ async function startServer() {
       }
 
       const cleanEmail = String(email).trim().toLowerCase();
-      const user = db.get<{
+      const user = await db.get<{
         id: string;
         name: string;
         email: string;
@@ -239,7 +240,7 @@ async function startServer() {
   });
 
   // Logout
-  app.post('/api/auth/logout', (req, res) => {
+  app.post('/api/auth/logout', async (req, res) => {
     req.session.destroy((err) => {
       if (err) {
         return res.status(500).json({ error: 'Failed to log out.' });
@@ -250,25 +251,25 @@ async function startServer() {
   });
 
   // Track Page Views / Reach
-  app.post('/api/analytics/view', (req, res) => {
+  app.post('/api/analytics/view', async (req, res) => {
     try {
       const { roomId } = req.body || {};
       const today = new Date().toISOString().split('T')[0];
 
-      db.transaction(() => {
-        db.run('UPDATE analytics_summary SET total_page_views = total_page_views + 1 WHERE id = 1;');
-        db.run(
+      await db.transaction(async () => {
+        await db.run('UPDATE analytics_summary SET total_page_views = total_page_views + 1 WHERE id = 1;');
+        await db.run(
           `INSERT INTO daily_analytics (date, views, inquiries) VALUES (?, 1, 0)
            ON CONFLICT(date) DO UPDATE SET views = views + 1;`,
           [today]
         );
 
         if (roomId && typeof roomId === 'string') {
-          db.run('UPDATE rooms SET views_count = views_count + 1 WHERE id = ?;', [roomId]);
+          await db.run('UPDATE rooms SET views_count = views_count + 1 WHERE id = ?;', [roomId]);
         }
       });
 
-      const summary = db.get<{ total_page_views: number }>(
+      const summary = await db.get<{ total_page_views: number }>(
         'SELECT total_page_views FROM analytics_summary WHERE id = 1;'
       );
 
@@ -280,16 +281,16 @@ async function startServer() {
   });
 
   // Get Analytics Stats for Admin
-  app.get('/api/analytics/stats', requireAdmin, (req, res) => {
+  app.get('/api/analytics/stats', requireAdmin, async (req, res) => {
     try {
-      const userCounts = db.get<{ usersCount: number; ownersCount: number }>(`
+      const userCounts = await db.get<{ usersCount: number; ownersCount: number }>(`
         SELECT 
           SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) as usersCount,
           SUM(CASE WHEN role = 'owner' THEN 1 ELSE 0 END) as ownersCount
         FROM users;
       `);
 
-      const roomCounts = db.get<{ totalRooms: number; availableRooms: number; bookedRooms: number }>(`
+      const roomCounts = await db.get<{ totalRooms: number; availableRooms: number; bookedRooms: number }>(`
         SELECT 
           COUNT(*) as totalRooms,
           SUM(CASE WHEN status = 'Available' THEN 1 ELSE 0 END) as availableRooms,
@@ -297,26 +298,26 @@ async function startServer() {
         FROM rooms;
       `);
 
-      const inquiryCount = db.get<{ totalInquiries: number }>(
+      const inquiryCount = await db.get<{ totalInquiries: number }>(
         'SELECT COUNT(*) as totalInquiries FROM inquiries;'
       );
 
-      const summary = db.get<{ total_page_views: number }>(
+      const summary = await db.get<{ total_page_views: number }>(
         'SELECT total_page_views FROM analytics_summary WHERE id = 1;'
       );
 
       // 7-day trend
-      const dailyTrend = db.all<{ date: string; views: number; inquiries: number }>(
+      const dailyTrend = (await db.all<{ date: string; views: number; inquiries: number }>(
         'SELECT date, views, inquiries FROM daily_analytics ORDER BY date DESC LIMIT 7;'
-      ).reverse();
+      )).reverse();
 
       // City distribution
-      const cityRows = db.all<{ city: string; count: number }>(
+      const cityRows = await db.all<{ city: string; count: number }>(
         'SELECT city, COUNT(*) as count FROM rooms GROUP BY city ORDER BY count DESC;'
       );
 
       // Room Type distribution
-      const typeRows = db.all<{ room_type: string; count: number }>(
+      const typeRows = await db.all<{ room_type: string; count: number }>(
         'SELECT room_type as type, COUNT(*) as count FROM rooms GROUP BY room_type ORDER BY count DESC;'
       );
 
@@ -339,7 +340,7 @@ async function startServer() {
   });
 
   // Get Rooms (Public with filters)
-  app.get('/api/rooms', (req, res) => {
+  app.get('/api/rooms', async (req, res) => {
     try {
       const { query, city, minPrice, maxPrice, roomType, status, ownerId } = req.query;
 
@@ -384,7 +385,7 @@ async function startServer() {
 
       sql += ' ORDER BY created_at DESC;';
 
-      const rows = db.all<any>(sql, params);
+      const rows = await db.all<any>(sql, params);
 
       const formatted = rows.map((r) => ({
         id: r.id,
@@ -418,9 +419,9 @@ async function startServer() {
   });
 
   // Get Single Room
-  app.get('/api/rooms/:id', (req, res) => {
+  app.get('/api/rooms/:id', async (req, res) => {
     try {
-      const r = db.get<any>('SELECT * FROM rooms WHERE id = ?', [req.params.id]);
+      const r = await db.get<any>('SELECT * FROM rooms WHERE id = ?', [req.params.id]);
       if (!r) {
         return res.status(404).json({ error: 'Room not found.' });
       }
@@ -455,7 +456,7 @@ async function startServer() {
   });
 
   // Create Room (Protected: Owner or Admin)
-  app.post('/api/rooms', requireOwnerOrAdmin, (req, res) => {
+  app.post('/api/rooms', requireOwnerOrAdmin, async (req, res) => {
     try {
       const {
         title,
@@ -517,7 +518,7 @@ async function startServer() {
       const now = new Date().toISOString();
       const roomStatus = status === 'Booked' ? 'Booked' : 'Available';
 
-      db.run(
+      await db.run(
         `INSERT INTO rooms (id, title, description, price, location, city, room_type, status, photos, amenities, owner_id, contact_name, contact_phone, contact_email, contact_whatsapp, views_count, latitude, longitude, is_exact_location, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?);`,
         [
@@ -576,10 +577,10 @@ async function startServer() {
   });
 
   // Update Room Details or Status (Protected: Owner or Admin)
-  app.put('/api/rooms/:id', requireOwnerOrAdmin, (req, res) => {
+  app.put('/api/rooms/:id', requireOwnerOrAdmin, async (req, res) => {
     try {
       const roomId = req.params.id;
-      const existing = db.get<any>('SELECT * FROM rooms WHERE id = ?', [roomId]);
+      const existing = await db.get<any>('SELECT * FROM rooms WHERE id = ?', [roomId]);
 
       if (!existing) {
         return res.status(404).json({ error: 'Room not found.' });
@@ -645,7 +646,7 @@ async function startServer() {
 
       const now = new Date().toISOString();
 
-      db.run(
+      await db.run(
         `UPDATE rooms SET 
           title = ?, description = ?, price = ?, location = ?, city = ?, room_type = ?, status = ?,
           photos = ?, amenities = ?, contact_name = ?, contact_phone = ?, contact_email = ?, contact_whatsapp = ?,
@@ -705,10 +706,10 @@ async function startServer() {
   });
 
   // Delete Room (Protected: Owner or Admin)
-  app.delete('/api/rooms/:id', requireOwnerOrAdmin, (req, res) => {
+  app.delete('/api/rooms/:id', requireOwnerOrAdmin, async (req, res) => {
     try {
       const roomId = req.params.id;
-      const existing = db.get<any>('SELECT * FROM rooms WHERE id = ?', [roomId]);
+      const existing = await db.get<any>('SELECT * FROM rooms WHERE id = ?', [roomId]);
 
       if (!existing) {
         return res.status(404).json({ error: 'Room not found.' });
@@ -720,9 +721,9 @@ async function startServer() {
         return res.status(403).json({ error: 'Forbidden: You can only delete your own listings.' });
       }
 
-      db.transaction(() => {
-        db.run('DELETE FROM inquiries WHERE room_id = ?;', [roomId]);
-        db.run('DELETE FROM rooms WHERE id = ?;', [roomId]);
+      await db.transaction(async () => {
+        await db.run('DELETE FROM inquiries WHERE room_id = ?;', [roomId]);
+        await db.run('DELETE FROM rooms WHERE id = ?;', [roomId]);
       });
 
       res.json({ message: 'Room deleted successfully!' });
@@ -733,9 +734,9 @@ async function startServer() {
   });
 
   // Admin - Get Users & Owners
-  app.get('/api/admin/users', requireAdmin, (req, res) => {
+  app.get('/api/admin/users', requireAdmin, async (req, res) => {
     try {
-      const users = db.all<{
+      const users = await db.all<{
         id: string;
         name: string;
         email: string;
@@ -752,10 +753,10 @@ async function startServer() {
   });
 
   // Admin - Delete User or Owner
-  app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  app.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
     try {
       const userId = req.params.id;
-      const user = db.get<any>('SELECT * FROM users WHERE id = ?', [userId]);
+      const user = await db.get<any>('SELECT * FROM users WHERE id = ?', [userId]);
 
       if (!user) {
         return res.status(404).json({ error: 'User not found.' });
@@ -765,14 +766,14 @@ async function startServer() {
         return res.status(403).json({ error: 'Cannot delete primary admin account.' });
       }
 
-      db.transaction(() => {
+      await db.transaction(async () => {
         // If owner is deleted, delete their rooms & inquiries
         if (user.role === 'owner') {
-          db.run('DELETE FROM inquiries WHERE owner_id = ?;', [userId]);
-          db.run('DELETE FROM rooms WHERE owner_id = ?;', [userId]);
+          await db.run('DELETE FROM inquiries WHERE owner_id = ?;', [userId]);
+          await db.run('DELETE FROM rooms WHERE owner_id = ?;', [userId]);
         }
-        db.run('DELETE FROM inquiries WHERE user_id = ?;', [userId]);
-        db.run('DELETE FROM users WHERE id = ?;', [userId]);
+        await db.run('DELETE FROM inquiries WHERE user_id = ?;', [userId]);
+        await db.run('DELETE FROM users WHERE id = ?;', [userId]);
       });
 
       res.json({ message: `Successfully deleted ${user.role} ${user.name}` });
@@ -783,7 +784,7 @@ async function startServer() {
   });
 
   // Submit Inquiry
-  app.post('/api/inquiries', (req, res) => {
+  app.post('/api/inquiries', async (req, res) => {
     try {
       const { roomId, message, userName, userPhone, userEmail } = req.body || {};
 
@@ -791,7 +792,7 @@ async function startServer() {
         return res.status(400).json({ error: 'Please select a room and provide a message.' });
       }
 
-      const room = db.get<any>('SELECT * FROM rooms WHERE id = ?', [roomId]);
+      const room = await db.get<any>('SELECT * FROM rooms WHERE id = ?', [roomId]);
       if (!room) {
         return res.status(404).json({ error: 'Target room does not exist.' });
       }
@@ -812,8 +813,8 @@ async function startServer() {
       const now = new Date().toISOString();
       const today = now.split('T')[0];
 
-      db.transaction(() => {
-        db.run(
+      await db.transaction(async () => {
+        await db.run(
           `INSERT INTO inquiries (id, room_id, room_title, user_id, user_name, user_email, user_phone, owner_id, message, status, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?);`,
           [
@@ -830,7 +831,7 @@ async function startServer() {
           ]
         );
 
-        db.run(
+        await db.run(
           `INSERT INTO daily_analytics (date, views, inquiries) VALUES (?, 0, 1)
            ON CONFLICT(date) DO UPDATE SET inquiries = inquiries + 1;`,
           [today]
@@ -859,7 +860,7 @@ async function startServer() {
   });
 
   // Get Inquiries for Owner (Protected: Owner or Admin)
-  app.get('/api/inquiries/owner/:ownerId', requireOwnerOrAdmin, (req, res) => {
+  app.get('/api/inquiries/owner/:ownerId', requireOwnerOrAdmin, async (req, res) => {
     try {
       const targetOwnerId = req.params.ownerId;
       const currentUser = req.session.user!;
@@ -869,7 +870,7 @@ async function startServer() {
         return res.status(403).json({ error: 'Forbidden: You can only view inquiries sent to your listings.' });
       }
 
-      const rows = db.all<any>(
+      const rows = await db.all<any>(
         'SELECT * FROM inquiries WHERE owner_id = ? ORDER BY created_at DESC;',
         [targetOwnerId]
       );
@@ -896,7 +897,7 @@ async function startServer() {
   });
 
   // Get Inquiries by User (Protected: Authenticated User or Admin)
-  app.get('/api/inquiries/user/:userId', requireAuth, (req, res) => {
+  app.get('/api/inquiries/user/:userId', requireAuth, async (req, res) => {
     try {
       const targetUserId = req.params.userId;
       const currentUser = req.session.user!;
@@ -906,7 +907,7 @@ async function startServer() {
         return res.status(403).json({ error: 'Forbidden: You can only view your own submitted inquiries.' });
       }
 
-      const rows = db.all<any>(
+      const rows = await db.all<any>(
         'SELECT * FROM inquiries WHERE user_id = ? ORDER BY created_at DESC;',
         [targetUserId]
       );
@@ -942,7 +943,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', async (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
