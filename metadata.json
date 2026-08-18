@@ -1,0 +1,6 @@
+{
+  "name": "Landmark RoomFinder",
+  "description": "An Airbnb-style room finding platform connecting owners and users with admin management, floating hero search, and real-time analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
