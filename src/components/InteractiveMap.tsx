@@ -123,7 +123,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               : 'bg-slate-700 text-white border-slate-300'
           }">
             <span class="w-1.5 h-1.5 rounded-full ${isAvailable ? 'bg-emerald-500' : 'bg-rose-400'}"></span>
-            <span>${isExact ? '' : '~'}$${room.price}</span>
+            <span>${isExact ? '' : '~'}Rs. ${room.price}</span>
             ${isExact ? '<span class="text-[9px] text-blue-600 font-bold ml-0.5" title="Exact Location Pin">📍</span>' : ''}
           </div>
           <div class="w-0 h-0 mx-auto border-l-4 border-l-transparent border-r-4 border-r-transparent border-t-4 ${
@@ -301,7 +301,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
               <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
                 <span className="text-xs font-extrabold text-slate-900">
-                  ${activePopupRoom.price}
+                  Rs. {activePopupRoom.price}
                   <span className="text-[10px] text-slate-400 font-normal">/mo</span>
                 </span>
                 <button

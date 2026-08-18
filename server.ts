@@ -16,7 +16,7 @@ import {
   verifyPassword
 } from './src/utils/security';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
   throw new Error('FATAL: SESSION_SECRET environment variable is missing in production.');

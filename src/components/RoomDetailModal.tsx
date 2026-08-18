@@ -147,7 +147,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
               </div>
 
               <div className="text-left sm:text-right bg-blue-50 p-3 sm:p-4 rounded-2xl border border-blue-100">
-                <div className="text-2xl sm:text-3xl font-black text-blue-600">${room.price}</div>
+                <div className="text-2xl sm:text-3xl font-black text-blue-600">Rs. {room.price}</div>
                 <p className="text-[11px] sm:text-xs text-slate-500 font-medium">per month (all utilities included)</p>
               </div>
             </div>

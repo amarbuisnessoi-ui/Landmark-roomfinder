@@ -181,7 +181,7 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         )}
                       </div>
                       <h3 className="text-base font-bold text-slate-900 line-clamp-1">{room.title}</h3>
-                      <p className="text-lg font-extrabold text-blue-600 mt-1">${room.price} <span className="text-xs font-normal text-slate-500">/ mo</span></p>
+                      <p className="text-lg font-extrabold text-blue-600 mt-1">Rs. {room.price} <span className="text-xs font-normal text-slate-500">/ mo</span></p>
                     </div>
 
                     {/* Quick Status Toggle */}

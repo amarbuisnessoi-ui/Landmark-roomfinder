@@ -405,7 +405,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     >
                       {room.status}
                     </span>
-                    <span className="text-xs font-bold text-blue-600">${room.price} / mo</span>
+                    <span className="text-xs font-bold text-blue-600">Rs. {room.price} / mo</span>
                   </div>
 
                   <h4 className="text-base font-bold text-slate-900 line-clamp-1">{room.title}</h4>

@@ -104,10 +104,10 @@ export const HeroSearch: React.FC<HeroSearchProps> = ({
                   className="w-full text-xs sm:text-sm font-medium outline-none text-slate-800 bg-transparent cursor-pointer min-h-[28px]"
                 >
                   <option value="">Any Monthly Budget</option>
-                  <option value="500">Under $500 / mo</option>
-                  <option value="800">Under $800 / mo</option>
-                  <option value="1200">Under $1,200 / mo</option>
-                  <option value="2000">Under $2,000 / mo</option>
+                  <option value="500">Under Rs. 500 / mo</option>
+                  <option value="800">Under Rs. 800 / mo</option>
+                  <option value="1200">Under Rs. 1,200 / mo</option>
+                  <option value="2000">Under Rs. 2,000 / mo</option>
                 </select>
               </div>
 

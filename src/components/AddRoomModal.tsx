@@ -229,7 +229,7 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">Price ($/month) *</label>
+              <label className="text-xs font-bold text-slate-700">Price (Rs./month) *</label>
               <input
                 type="number"
                 required

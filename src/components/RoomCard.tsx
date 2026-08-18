@@ -117,7 +117,7 @@ export const RoomCard: React.FC<RoomCardProps> = ({
           {/* Price */}
           <div className="flex items-baseline gap-1 pt-0.5">
             <span className="text-lg sm:text-xl font-extrabold text-slate-900">
-              ${room.price}
+              Rs. {room.price}
             </span>
             <span className="text-xs text-slate-500 font-normal">/month</span>
           </div>
