@@ -2,7 +2,6 @@ import { createClient, type Client } from '@libsql/client';
 import bcrypt from 'bcryptjs';
 import session from 'express-session';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { INITIAL_ROOMS } from '../data/initialRooms';
 
 const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
@@ -143,17 +142,6 @@ async function initializeDatabase() {
           });
         }
       }
-
-      // Fill missing coordinates for bundled rooms without overwriting user edits.
-      for (const room of INITIAL_ROOMS) {
-        if (room.latitude !== undefined && room.longitude !== undefined) {
-          await client.execute({
-            sql: `UPDATE rooms
-                  SET latitude = ?, longitude = ?, is_exact_location = 1
-                  WHERE id = ? AND latitude IS NULL`,
-            args: [room.latitude, room.longitude, room.id]
-          });
-        }
       }
     }
   })().catch((error) => {
@@ -169,86 +157,7 @@ async function seedDatabase(client: Client) {
   const now = new Date().toISOString();
 
   const adminPasswordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
-  const ownerPasswordHash = await bcrypt.hash('ownerpassword123', 10);
-  const userPasswordHash = await bcrypt.hash('userpassword123', 10);
 
-  const seedUsers = [
-    ['user-admin', 'Landmark Admin', ADMIN_EMAIL, '+1 (555) 000-1111', adminPasswordHash, 'admin'],
-    ['owner-1', 'Marcus Vance', 'marcus.vance@landmark.com', '+1 (555) 234-8901', ownerPasswordHash, 'owner'],
-    ['owner-2', 'Elena Rostova', 'elena.rostova@landmark.com', '+1 (555) 876-1234', ownerPasswordHash, 'owner'],
-    ['owner-3', 'David Sterling', 'david.sterling@landmark.com', '+1 (555) 432-9087', ownerPasswordHash, 'owner'],
-    ['user-1', 'Sarah Connor', 'sarah.c@gmail.com', '+1 (555) 999-8822', userPasswordHash, 'user'],
-    ['user-2', 'Alexander Wright', 'alex.wright@outlook.com', '+1 (555) 777-3344', userPasswordHash, 'user']
-  ];
-
-  for (const [id, name, email, phone, passHash, role] of seedUsers) {
-    await client.execute({
-      sql: `INSERT OR IGNORE INTO users
-            (id, name, email, phone, password_hash, role, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [id, name, email, phone, passHash, role, now, now]
-    });
-  }
-
-  for (const r of INITIAL_ROOMS) {
-    await client.execute({
-      sql: `INSERT OR IGNORE INTO rooms
-        (id, title, description, price, location, city, room_type, status, photos,
-         amenities, owner_id, contact_name, contact_phone, contact_email, contact_whatsapp,
-         views_count, latitude, longitude, is_exact_location, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        r.id, r.title, r.description, r.price, r.location, r.city, r.roomType, r.status,
-        JSON.stringify(r.photos), JSON.stringify(r.amenities), r.ownerId, r.contactName,
-        r.contactPhone, r.contactEmail, r.contactWhatsapp || '', r.viewsCount || 0,
-        r.latitude ?? null, r.longitude ?? null, r.isExactLocation ? 1 : 0,
-        r.createdAt || now, r.updatedAt || now
-      ]
-    });
-  }
-
-  const roomOne = await client.execute({
-    sql: 'SELECT id, title, owner_id FROM rooms WHERE id = ?',
-    args: ['room-1']
-  });
-
-  if (roomOne.rows.length > 0) {
-    await client.execute({
-      sql: `INSERT OR IGNORE INTO inquiries
-        (id, room_id, room_title, user_id, user_name, user_email, user_phone,
-         owner_id, message, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        'inq-1', 'room-1', String(roomOne.rows[0].title),
-        'user-1', 'Sarah Connor', 'sarah.c@gmail.com', '+1 (555) 999-8822',
-        String(roomOne.rows[0].owner_id),
-        'Hi Marcus! Is this studio available for immediate move-in starting next month?',
-        'Pending', now
-      ]
-    });
-  }
-
-  await client.execute({
-    sql: 'INSERT OR IGNORE INTO analytics_summary (id, total_page_views) VALUES (1, 1482)'
-  });
-
-  const dailySample = [
-    ['2026-08-01', 180, 3],
-    ['2026-08-02', 210, 5],
-    ['2026-08-03', 195, 4],
-    ['2026-08-04', 240, 8],
-    ['2026-08-05', 310, 12],
-    ['2026-08-06', 290, 9],
-    ['2026-08-07', 57, 2]
-  ];
-
-  for (const [date, views, inquiries] of dailySample) {
-    await client.execute({
-      sql: `INSERT OR IGNORE INTO daily_analytics (date, views, inquiries)
-            VALUES (?, ?, ?)`,
-      args: [date, views, inquiries]
-    });
-  }
 }
 
 export async function getDB(): Promise<{
