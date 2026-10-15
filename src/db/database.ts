@@ -86,7 +86,8 @@ async function initializeDatabase() {
         user_phone TEXT NOT NULL,
         owner_id TEXT NOT NULL,
         message TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'Pending' CHECK(status IN ('Pending', 'Contacted', 'Closed')),
+        status TEXT NOT NULL DEFAULT 'Pending'
+          CHECK(status IN ('Pending', 'Contacted', 'Closed')),
         created_at TEXT NOT NULL,
         FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
         FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
@@ -125,7 +126,6 @@ async function initializeDatabase() {
     if (userCount === 0) {
       await seedDatabase(client);
     } else {
-      // Keep the configured admin password synchronized with the seeded admin account.
       const adminResult = await client.execute({
         sql: 'SELECT id, password_hash FROM users WHERE role = ? LIMIT 1',
         args: ['admin']
@@ -133,7 +133,11 @@ async function initializeDatabase() {
 
       const admin = adminResult.rows[0] as any;
       if (admin?.id && admin?.password_hash) {
-        const valid = await bcrypt.compare(ADMIN_PASSWORD, String(admin.password_hash));
+        const valid = await bcrypt.compare(
+          ADMIN_PASSWORD,
+          String(admin.password_hash)
+        );
+
         if (!valid) {
           const hash = await bcrypt.hash(ADMIN_PASSWORD, 10);
           await client.execute({
@@ -141,7 +145,6 @@ async function initializeDatabase() {
             args: [hash, new Date().toISOString(), admin.id]
           });
         }
-      }
       }
     }
   })().catch((error) => {
@@ -153,11 +156,26 @@ async function initializeDatabase() {
 }
 
 async function seedDatabase(client: Client) {
-  console.log('Seeding Turso database...');
-  const now = new Date().toISOString();
+  console.log('Initializing an empty database with an admin account only.');
 
+  const now = new Date().toISOString();
   const adminPasswordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
 
+  await client.execute({
+    sql: `INSERT INTO users
+      (id, name, email, phone, password_hash, role, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      `admin-${Date.now()}`,
+      'Administrator',
+      ADMIN_EMAIL,
+      null,
+      adminPasswordHash,
+      'admin',
+      now,
+      now
+    ]
+  });
 }
 
 export async function getDB(): Promise<{
