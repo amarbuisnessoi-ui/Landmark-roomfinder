@@ -17,8 +17,8 @@ import {
 
 interface NavbarProps {
   currentUser: User | null;
-  activeTab: 'explore' | 'owner' | 'admin' | 'user-dash';
-  setActiveTab: (tab: 'explore' | 'owner' | 'admin' | 'user-dash') => void;
+  activeTab: 'explore' | 'owner' | 'admin' | 'user-dash' | 'roommates';
+  setActiveTab: (tab: 'explore' | 'owner' | 'admin' | 'user-dash' | 'roommates') => void;
   onOpenAuth: (mode?: 'login' | 'register') => void;
   onOpenAddRoom: () => void;
   onLogout: () => void;
@@ -36,7 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleTabClick = (tab: 'explore' | 'owner' | 'admin' | 'user-dash') => {
+  const handleTabClick = (tab: 'explore' | 'owner' | 'admin' | 'user-dash' | 'roommates') => {
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
@@ -75,6 +75,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Home className="w-4 h-4" />
               Explore
+            </button>
+
+            <button
+              onClick={() => currentUser ? handleTabClick('roommates') : onOpenAuth('login')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all cursor-pointer ${
+                activeTab === 'roommates'
+                  ? 'bg-rose-500 text-white shadow-sm font-semibold'
+                  : 'text-slate-600 hover:text-rose-600 hover:bg-white'
+              }`}
+            >
+              <Heart className="w-4 h-4" />
+              Roommates
             </button>
 
             {currentUser?.role === 'owner' && (
@@ -375,6 +387,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-[10px]">Host</span>
           </button>
         )}
+
+        <button
+          onClick={() => currentUser ? handleTabClick('roommates') : onOpenAuth('login')}
+          className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all cursor-pointer min-w-[56px] ${
+            activeTab === 'roommates' ? 'text-rose-600 font-bold' : 'text-slate-500 hover:text-slate-900 font-medium'
+          }`}
+        >
+          <Heart className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Roommates</span>
+        </button>
 
         {currentUser?.role === 'owner' ? (
           <button

@@ -213,6 +213,88 @@ export const api = {
     const res = await fetch(`/api/inquiries/user/${userId}`, { credentials: 'include' });
     if (!res.ok) throw new Error('Failed to fetch user inquiries');
     return res.json();
+  },
+
+  async getRoommateProfile(): Promise<any> {
+    const res = await fetch('/api/roommates/me', { credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load roommate profile');
+    return data.profile;
+  },
+
+  async saveRoommateProfile(profile: Record<string, any>): Promise<any> {
+    const headers = await getMutationHeaders();
+    const res = await fetch('/api/roommates/me', { method: 'PUT', headers, credentials: 'include', body: JSON.stringify(profile) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to save roommate profile');
+    return data.profile;
+  },
+
+  async discoverRoommates(): Promise<any[]> {
+    const res = await fetch('/api/roommates/discover', { credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load roommate profiles');
+    return data;
+  },
+
+  async swipeRoommate(targetUserId: string, action: 'like' | 'pass'): Promise<any> {
+    const headers = await getMutationHeaders();
+    const res = await fetch('/api/roommates/swipe', { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ targetUserId, action }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to save your choice');
+    return data;
+  },
+
+  async getRoommateMatches(): Promise<any[]> {
+    const res = await fetch('/api/roommates/matches', { credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load matches');
+    return data;
+  },
+
+  async createRoommateMeetup(matchId: string, details: Record<string, string>): Promise<any> {
+    const headers = await getMutationHeaders();
+    const res = await fetch(`/api/roommates/matches/${encodeURIComponent(matchId)}/meetups`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify(details) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to propose meetup');
+    return data.meetup;
+  },
+
+  async respondToRoommateMeetup(meetupId: string, status: 'accepted' | 'declined' | 'cancelled'): Promise<void> {
+    const headers = await getMutationHeaders();
+    const res = await fetch(`/api/roommates/meetups/${encodeURIComponent(meetupId)}`, { method: 'PATCH', headers, credentials: 'include', body: JSON.stringify({ status }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to update meetup');
+  },
+
+  async getRoommateMessages(matchId: string): Promise<any[]> {
+    const res = await fetch(`/api/roommates/matches/${encodeURIComponent(matchId)}/messages`, { credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load conversation');
+    return data;
+  },
+
+  async sendRoommateMessage(matchId: string, message: string): Promise<any> {
+    const headers = await getMutationHeaders();
+    const res = await fetch(`/api/roommates/matches/${encodeURIComponent(matchId)}/messages`, { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ message }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to send message');
+    return data.message;
+  },
+
+  async blockRoommate(targetUserId: string): Promise<void> {
+    const headers = await getMutationHeaders();
+    const res = await fetch('/api/roommates/block', { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ targetUserId }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to block profile');
+  },
+
+  async reportRoommate(targetUserId: string, reason: string, details = ''): Promise<void> {
+    const headers = await getMutationHeaders();
+    const res = await fetch('/api/roommates/report', { method: 'POST', headers, credentials: 'include', body: JSON.stringify({ targetUserId, reason, details }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to report profile');
   }
+
 };
 

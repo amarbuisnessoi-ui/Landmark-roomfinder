@@ -12,6 +12,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { UserDashboard } from './components/UserDashboard';
 import { Footer } from './components/Footer';
 import { InteractiveMap } from './components/InteractiveMap';
+import { RoommateHub } from './components/RoommateHub';
 import { Building2, Sparkles, LayoutGrid, Map as MapIcon, Columns } from 'lucide-react';
 
 export default function App() {
@@ -22,7 +23,7 @@ export default function App() {
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   
-  const [activeTab, setActiveTab] = useState<'explore' | 'owner' | 'admin' | 'user-dash'>('explore');
+  const [activeTab, setActiveTab] = useState<'explore' | 'owner' | 'admin' | 'user-dash' | 'roommates'>('explore');
   const [viewMode, setViewMode] = useState<'grid' | 'map' | 'split'>('grid');
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [showAddRoom, setShowAddRoom] = useState(false);
@@ -455,6 +456,8 @@ export default function App() {
             </section>
           </div>
         )}
+
+        {activeTab === 'roommates' && currentUser && <RoommateHub currentUser={currentUser} rooms={rooms} onSelectRoom={handleSelectRoom} />}
 
         {activeTab === 'owner' && currentUser && (
           <OwnerDashboard
