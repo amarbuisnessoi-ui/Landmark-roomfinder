@@ -16,7 +16,22 @@ export const ReferralHub: React.FC = () => {
   useEffect(() => { void load(); }, []);
   const link = data ? `${window.location.origin}/spread?ref=${encodeURIComponent(data.code)}` : '';
   const copy = async () => { try { await navigator.clipboard.writeText(link); await api.trackCampaignShare(data.code, getGuestToken()); setCopied(true); setTimeout(() => setCopied(false), 1800); await load(); } catch { setError('Copy failed or could not be tracked. Please try again.'); } };
-  const share = async () => { if (navigator.share) { try { await api.trackCampaignShare(data.code, getGuestToken()); await load(); await navigator.share({ title: 'Landmark Room Finder', text: 'Know someone looking for a room or roommate in Nepal? Discover Landmark Room Finder, share the word, and unlock community badges!', url: link }); } catch (e: any) { if (e?.name !== 'AbortError') setError(e?.message || 'Could not start sharing.'); } } else await copy(); };
+  const share = async () => {
+    if (!navigator.share) { await copy(); return; }
+    try {
+      // Launch share UI before awaiting fetches; Android/Chrome can drop click activation after an await.
+      const sharePromise = navigator.share({
+        title: 'Landmark Room Finder — Rs. 2,500 referral reward',
+        text: 'Help people in Nepal find rooms and roommates. Share Landmark Room Finder. Eligible verified referrals may qualify for the Rs. 2,500 reward while the campaign is active.',
+        url: link
+      });
+      await api.trackCampaignShare(data.code, getGuestToken());
+      await sharePromise;
+      await load();
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') setError(e?.message || 'Could not start sharing. Try Copy link instead.');
+    }
+  };
   if (error && !data) return <div className="m-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>;
   if (!data) return <div className="p-6 text-sm text-slate-500">Loading referral rewards…</div>;
   const campaign = data.campaign || {};

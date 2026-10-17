@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { Room } from '../types';
 import { getRoomCoordinates, isRoomLocationExact, CITY_COORDINATES } from '../utils/mapUtils';
-import { MapPin, Navigation, ZoomIn, ZoomOut, Layers, ExternalLink, X, CheckCircle2, AlertCircle } from 'lucide-react';
+import { MapPin, Navigation, ZoomIn, ZoomOut, ExternalLink, X, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface InteractiveMapProps {
   rooms: Room[];
@@ -25,7 +25,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const [activePopupRoom, setActivePopupRoom] = useState<Room | null>(null);
-  const [tileProvider, setTileProvider] = useState<'standard' | 'humanitarian'>('standard');
 
   // Initialize Map
   useEffect(() => {
@@ -43,12 +42,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         attributionControl: false
       });
 
-      const tileUrl =
-        tileProvider === 'standard'
-          ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-          : 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
-
-      L.tileLayer(tileUrl, {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       }).addTo(map);
@@ -69,28 +63,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       }
     };
   }, []);
-
-  // Update Tile Layer if provider toggled
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    map.eachLayer((layer) => {
-      if (layer instanceof L.TileLayer) {
-        map.removeLayer(layer);
-      }
-    });
-
-    const tileUrl =
-      tileProvider === 'standard'
-        ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-        : 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
-
-    L.tileLayer(tileUrl, {
-      maxZoom: 19,
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
-  }, [tileProvider]);
 
   // Update Markers when rooms list or selectedRoom changes
   useEffect(() => {
@@ -242,18 +214,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         >
           <Navigation className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => setTileProvider((prev) => (prev === 'standard' ? 'humanitarian' : 'standard'))}
-          title="Toggle Map Style"
-          className="w-9 h-9 bg-white hover:bg-slate-50 text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center justify-center transition-all cursor-pointer"
-        >
-          <Layers className="w-4 h-4" />
-        </button>
       </div>
 
       {/* Free OpenStreetMap Attribution & Disclaimer Bottom Left */}
       <div className="absolute bottom-2 left-2 z-10 bg-white/85 backdrop-blur-md px-2.5 py-0.5 rounded-md text-[9px] text-slate-600 font-medium border border-slate-200/60 shadow-2xs">
-        Map data © <span className="font-semibold text-blue-600">OpenStreetMap</span> contributors (Free & Open API)
+        Map data © <span className="font-semibold text-blue-600">OpenStreetMap</span> contributors
       </div>
 
       {/* Active Room Floating Preview Card */}

@@ -55,14 +55,26 @@ export const CampaignLanding: React.FC = () => {
 
   const share = async () => {
     try {
-      await trackShare();
       if (navigator.share) {
-        await navigator.share({ title: 'Landmark Room Finder — Share the movement', text: 'Know someone looking for a room or roommate in Nepal? Discover Landmark Room Finder, share the word, and unlock community badges!', url: ownLink });
+        // Open the native share sheet immediately during the click gesture.
+        // Awaiting a network request first can consume Android/Chrome's user activation.
+        const sharePromise = navigator.share({
+          title: 'Landmark Room Finder — Earn Rs. 2,500',
+          text: 'Help people in Nepal discover rooms and roommates through Landmark Room Finder. Share the campaign and learn how eligible participants can qualify for the Rs. 2,500 reward.',
+          url: ownLink
+        });
+        await trackShare();
+        await sharePromise;
+        setStatus('Share initiated! Your progress has been updated.');
       } else {
-        await navigator.clipboard.writeText(ownLink); setCopied(true); setTimeout(() => setCopied(false), 1800);
+        await navigator.clipboard.writeText(ownLink);
+        await trackShare();
+        setCopied(true); setTimeout(() => setCopied(false), 1800);
+        setStatus('Link copied and share action recorded.');
       }
-      setStatus('Share initiated! Your progress has been updated.');
-    } catch (error: any) { if (error?.name !== 'AbortError') setStatus(error.message || 'Sharing could not be started.'); }
+    } catch (error: any) {
+      if (error?.name !== 'AbortError') setStatus(error.message || 'Sharing could not be started. Try Copy my link instead.');
+    }
   };
 
   const copy = async () => {
@@ -83,6 +95,12 @@ export const CampaignLanding: React.FC = () => {
         <div className="relative mt-8 max-w-3xl"><div className="inline-flex items-center gap-2 rounded-full bg-amber-300 px-3 py-1 text-xs font-extrabold text-slate-900"><Megaphone className="h-4 w-4"/> THE COMMUNITY GROWTH CAMPAIGN</div>
           <h1 className="mt-4 text-4xl font-black leading-tight sm:text-6xl">One share can help someone find a place to call home.</h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-indigo-100 sm:text-lg">Help more people in Nepal discover rooms, rentals, and compatible roommates. Spread the word, build your impact, and unlock community badges as you go.</p>
+          <div className="mt-6 max-w-2xl rounded-2xl border border-amber-200/70 bg-amber-300 px-5 py-4 text-slate-950 shadow-lg">
+            <div className="text-xs font-black uppercase tracking-widest">Referral reward campaign</div>
+            <div className="mt-1 text-3xl font-black sm:text-4xl">Earn Rs. 2,500</div>
+            <p className="mt-1 text-sm font-bold">For each of the first 100 eligible winners — up to Rs. 2,50,000 in total rewards.</p>
+            <p className="mt-2 text-xs leading-5">Cash rewards are not earned just by clicking Share or unlocking the First Share badge. Winners must meet the campaign’s verified-referral eligibility rules, and rewards are subject to the campaign being active and admin verification.</p>
+          </div>
           <div className="mt-7 flex flex-wrap gap-3"><button onClick={() => void share()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 font-extrabold text-indigo-800 shadow-lg hover:bg-indigo-50"><Share2 className="h-5 w-5"/> Share the campaign <ArrowRight className="h-4 w-4"/></button><button onClick={() => void copy()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-5 py-3 font-bold text-white hover:bg-white/20"><Copy className="h-4 w-4"/>{copied ? 'Copied!' : 'Copy my link'}</button></div>
         </div>
       </header>

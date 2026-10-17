@@ -1,0 +1,26 @@
+LANDMARK ROOM FINDER — CAMPAIGN + GOOGLE LOGIN UPGRADE
+
+This is an overlay patch. Extract its contents into your EXISTING repository root; do not replace or delete the .git directory.
+
+Files updated:
+- Google OAuth authorization/callback and safe social-account storage
+- Public /spread campaign landing page
+- Separate share-initiated and unique-visitor tracking
+- Guest campaign progress claim after login/register
+- Referral dashboard counters and share badges
+- Google sign-in button in the existing AuthModal
+- README and .env.example notes
+
+Before deployment:
+1. Confirm Render has GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET set.
+2. In Google Cloud, authorize this redirect URI exactly:
+   https://landmark-roomfinder.onrender.com/api/auth/google/callback
+3. Overlay these files into your existing repo, then run git diff --check.
+4. Commit and push to the existing production remote only after reviewing the diff.
+5. Confirm Render build succeeds, then test /spread, email login/register, Google login, and claiming a badge.
+
+Tracking definitions:
+- Shares initiated = share/copy actions initiated in the app. This does not prove delivery.
+- Unique visitors reached = distinct browser tokens visiting a personalized link. This is approximate browser-level reach, not a verified human identity.
+
+No real secrets or .env files are included in this patch.

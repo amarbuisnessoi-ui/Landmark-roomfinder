@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { CITY_COORDINATES, geocodeLocation, isValidCoordinates, reverseGeocode } from '../utils/mapUtils';
-import { MapPin, Navigation, Search, RotateCcw, CheckCircle2, AlertTriangle, Layers } from 'lucide-react';
+import { MapPin, Navigation, Search, RotateCcw, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface LocationPickerMapProps {
   latitude?: number | null;
@@ -24,7 +24,6 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
-  const [tileStyle, setTileStyle] = useState<'standard' | 'humanitarian'>('standard');
   const [geocodedAddressHint, setGeocodedAddressHint] = useState<string | null>(null);
 
   const hasCoords = isValidCoordinates(latitude, longitude);
@@ -57,14 +56,9 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
         attributionControl: false
       });
 
-      const tileUrl =
-        tileStyle === 'standard'
-          ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-          : 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
-
-      L.tileLayer(tileUrl, {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       }).addTo(map);
 
       // Add click handler to place / move pin
@@ -270,7 +264,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
               <span className="text-slate-300 italic">No pin placed yet</span>
             )}
           </div>
-          <span className="text-[10px] text-slate-400 shrink-0 ml-2">OpenStreetMap Free API</span>
+          <span className="text-[10px] text-slate-400 shrink-0 ml-2">OpenStreetMap contributors</span>
         </div>
       </div>
 
