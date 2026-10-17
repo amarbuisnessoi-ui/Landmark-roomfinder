@@ -59,6 +59,41 @@ async function initializeDatabase() {
         reward_slots INTEGER NOT NULL DEFAULT 100,
         updated_at TEXT NOT NULL
       );`,
+      `CREATE TABLE IF NOT EXISTS social_accounts (
+        provider TEXT NOT NULL CHECK(provider IN ('google')),
+        provider_user_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(provider, provider_user_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );`,
+      `CREATE TABLE IF NOT EXISTS campaign_guests (
+        campaign_key TEXT PRIMARY KEY,
+        guest_token TEXT NOT NULL UNIQUE,
+        user_id TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );`,
+      `CREATE TABLE IF NOT EXISTS campaign_share_events (
+        id TEXT PRIMARY KEY,
+        campaign_key TEXT NOT NULL,
+        guest_id TEXT,
+        user_id TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_campaign_share_key ON campaign_share_events(campaign_key);`,
+      `CREATE TABLE IF NOT EXISTS campaign_visitors (
+        id TEXT PRIMARY KEY,
+        campaign_key TEXT NOT NULL,
+        visitor_id TEXT NOT NULL,
+        guest_id TEXT,
+        user_id TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(campaign_key, visitor_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_campaign_visitor_key ON campaign_visitors(campaign_key);`,
       `CREATE TABLE IF NOT EXISTS referral_codes (
         user_id TEXT PRIMARY KEY,
         code TEXT NOT NULL UNIQUE,

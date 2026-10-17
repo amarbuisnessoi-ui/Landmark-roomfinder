@@ -57,11 +57,24 @@ export const api = {
     }
   },
 
+  async claimCampaignProgress(guestId: string): Promise<any> {
+    const res = await fetch('/api/campaign/claim', { method: 'POST', headers: await getMutationHeaders(), credentials: 'include', body: JSON.stringify({ guestId }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not claim campaign progress');
+    return data;
+  },
+
   async getReferralDashboard(): Promise<any> {
     const res = await fetch('/api/referrals/me', { credentials: 'include' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to load referrals');
     return data;
+  },
+
+  async trackCampaignShare(referralCode: string, guestId: string): Promise<void> {
+    const res = await fetch('/api/campaign/track', { method: 'POST', headers: await getMutationHeaders(), credentials: 'include', body: JSON.stringify({ eventType: 'share', ref: referralCode, guestId }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not record share');
   },
 
   async getReferralCampaign(): Promise<any> {

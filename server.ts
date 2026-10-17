@@ -125,6 +125,145 @@ async function startServer() {
     res.json({ user: null, csrfToken });
   });
 
+  // Google OAuth: authorization-code flow with session-bound state and verified email.
+  app.get('/api/auth/google', (req, res) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId || !process.env.GOOGLE_CLIENT_SECRET) return res.status(503).send('Google sign-in is not configured.');
+    const state = crypto.randomBytes(32).toString('hex');
+    (req.session as any).googleOAuthState = state;
+    (req.session as any).googleOAuthReturnTo = '/';
+    const referralCode = typeof req.query.ref === 'string' ? req.query.ref.trim().toUpperCase() : '';
+    (req.session as any).googleReferralCode = /^[A-F0-9]{10}$/.test(referralCode) ? referralCode : '';
+    (req.session as any).googleCampaignClaim = req.query.campaignClaim === '1';
+    req.session.save((err) => {
+      if (err) return res.status(500).send('Could not start Google sign-in.');
+      const callback = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+      const params = new URLSearchParams({ client_id: clientId, redirect_uri: callback, response_type: 'code', scope: 'openid email profile', state, prompt: 'select_account' });
+      res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+    });
+  });
+
+  app.get('/api/auth/google/callback', authLimiter, async (req, res) => {
+    const fail = (reason: string) => res.redirect(`/?oauthError=${encodeURIComponent(reason)}&campaignClaim=1`);
+    try {
+      const expectedState = (req.session as any).googleOAuthState;
+      delete (req.session as any).googleOAuthState;
+      if (!expectedState || typeof req.query.state !== 'string' || req.query.state !== expectedState) return fail('Google sign-in could not be verified. Please try again.');
+      if (typeof req.query.error === 'string') return fail('Google sign-in was cancelled.');
+      if (typeof req.query.code !== 'string') return fail('Google did not return an authorization code.');
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      if (!clientId || !clientSecret) return fail('Google sign-in is not configured.');
+      const callback = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code: req.query.code, client_id: clientId, client_secret: clientSecret, redirect_uri: callback, grant_type: 'authorization_code' }) });
+      const tokenData: any = await tokenResponse.json();
+      if (!tokenResponse.ok || typeof tokenData.access_token !== 'string') return fail('Google sign-in failed. Please try again.');
+      const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { Authorization: `Bearer ${tokenData.access_token}` } });
+      const profile: any = await profileResponse.json();
+      if (!profileResponse.ok || !profile.sub || !profile.email || profile.email_verified !== true) return fail('Google must provide a verified email address.');
+      const email = String(profile.email).trim().toLowerCase();
+      const shouldClaimCampaign = (req.session as any).googleCampaignClaim === true;
+      const linked = await db.get<any>("SELECT u.id, u.name, u.email, u.phone, u.role FROM social_accounts s JOIN users u ON u.id=s.user_id WHERE s.provider='google' AND s.provider_user_id=?", [String(profile.sub)]);
+      let user = linked;
+      if (!user) {
+        const existing = await db.get<any>('SELECT id FROM users WHERE email=?', [email]);
+        if (existing) return fail('An account already uses this email. Sign in with your existing method first; accounts are not linked automatically.');
+        const id = `user-${crypto.randomUUID()}`;
+        const now = new Date().toISOString();
+        const name = sanitizeText(profile.name || email.split('@')[0]) || 'Landmark User';
+        const passwordHash = await hashPassword(crypto.randomBytes(48).toString('hex'));
+        await db.transaction(async () => {
+          await db.run('INSERT INTO users (id,name,email,phone,password_hash,role,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', [id, name, email, '', passwordHash, 'user', now, now]);
+          await db.run("INSERT INTO social_accounts (provider,provider_user_id,user_id,created_at) VALUES ('google',?,?,?)", [String(profile.sub), id, now]);
+          const referralCode = crypto.randomBytes(5).toString('hex').toUpperCase();
+          await db.run('INSERT OR IGNORE INTO referral_codes (user_id,code,created_at) VALUES (?,?,?)', [id, referralCode, now]);
+          if (typeof (req.session as any).googleReferralCode === 'string' && (req.session as any).googleReferralCode) {
+            const referrer = await db.get<any>('SELECT user_id AS userId FROM referral_codes WHERE code=?', [(req.session as any).googleReferralCode]);
+            if (referrer && referrer.userId !== id) await db.run('INSERT OR IGNORE INTO referrals (id,referrer_id,referred_user_id,status,created_at) VALUES (?,?,?,?,?)', [`ref-${crypto.randomUUID()}`, referrer.userId, id, 'pending', now]);
+          }
+        });
+        user = { id, name, email, phone: '', role: 'user' };
+      }
+      req.session.regenerate((err) => {
+        if (err) return fail('Google signed in, but a secure session could not be created. Please retry.');
+        req.session.csrfToken = crypto.randomBytes(24).toString('hex');
+        req.session.user = { id: user.id, name: user.name, email: user.email, phone: user.phone || '', role: user.role };
+        req.session.save((saveErr) => {
+          if (saveErr) return fail('Could not save your sign-in session. Please retry.');
+          res.redirect(shouldClaimCampaign ? '/?oauthSuccess=1&campaignClaim=1' : '/?oauthSuccess=1');
+        });
+      });
+    } catch (error) {
+      console.error('Google OAuth callback failed:', error);
+      return fail('Google sign-in failed. Please try again.');
+    }
+  });
+
+  // Public campaign tracking. Share taps and unique visitors are deliberately separate metrics.
+  app.get('/api/campaign/progress', async (req, res) => {
+    try {
+      const key = typeof req.query.ref === 'string' ? req.query.ref.toUpperCase() : typeof req.query.g === 'string' ? req.query.g : '';
+      if (!/^[A-Z0-9-]{6,80}$/i.test(key)) return res.json({ shares: 0, reached: 0, badgeUnlocked: false });
+      const shares = await db.get<any>('SELECT COUNT(*) AS count FROM campaign_share_events WHERE campaign_key=?', [key]);
+      const reached = await db.get<any>('SELECT COUNT(*) AS count FROM campaign_visitors WHERE campaign_key=?', [key]);
+      const userId = req.session.user?.id;
+      const claimed = userId ? await db.get<any>('SELECT id FROM campaign_share_events WHERE campaign_key=? AND user_id=? LIMIT 1', [key, userId]) : null;
+      res.json({ shares: Number(shares?.count || 0), reached: Number(reached?.count || 0), badgeUnlocked: Number(shares?.count || 0) >= 1, claimed: Boolean(claimed) });
+    } catch (error) { console.error('Campaign progress error:', error); res.status(500).json({ error: 'Could not load campaign progress.' }); }
+  });
+
+  app.post('/api/campaign/track', async (req, res) => {
+    try {
+      const { eventType, ref, campaignKey, guestId, visitorId } = req.body || {};
+      const key = typeof ref === 'string' ? ref.toUpperCase() : typeof campaignKey === 'string' ? campaignKey : '';
+      if (!/^[A-Z0-9-]{6,80}$/i.test(key) || typeof guestId !== 'string' || !/^[A-Z0-9-]{6,80}$/i.test(guestId) || !['share', 'visit'].includes(eventType)) return res.status(400).json({ error: 'Invalid campaign tracking data.' });
+      const now = new Date().toISOString();
+      let userId: string | null = eventType === 'share' ? (req.session.user?.id || null) : null;
+      if (eventType === 'visit' && /^[A-F0-9]{10}$/i.test(key)) {
+        const owner = await db.get<any>('SELECT user_id AS userId FROM referral_codes WHERE code=?', [key]);
+        userId = owner?.userId || null;
+      }
+      if (eventType === 'share' && !ref) {
+        await db.run('INSERT OR IGNORE INTO campaign_guests (campaign_key,guest_token,user_id,created_at) VALUES (?,?,?,?)', [key, guestId, req.session.user?.id || null, now]);
+        const owner = await db.get<any>('SELECT guest_token AS guestToken FROM campaign_guests WHERE campaign_key=?', [key]);
+        if (!owner || owner.guestToken !== guestId) return res.status(403).json({ error: 'This campaign link belongs to another participant.' });
+        if (req.session.user?.id) await db.run('UPDATE campaign_guests SET user_id=? WHERE campaign_key=?', [req.session.user.id, key]);
+      }
+      if (eventType === 'share') {
+        await db.run('INSERT INTO campaign_share_events (id,campaign_key,guest_id,user_id,created_at) VALUES (?,?,?,?,?)', [crypto.randomUUID(), key, guestId, userId, now]);
+      } else {
+        if (typeof visitorId !== 'string' || !/^[A-Z0-9-]{8,100}$/i.test(visitorId)) return res.status(400).json({ error: 'Invalid visitor token.' });
+        await db.run('INSERT OR IGNORE INTO campaign_visitors (id,campaign_key,visitor_id,guest_id,user_id,created_at) VALUES (?,?,?,?,?,?)', [crypto.randomUUID(), key, visitorId, guestId, userId, now]);
+      }
+      res.json({ success: true });
+    } catch (error) { console.error('Campaign tracking error:', error); res.status(500).json({ error: 'Could not record campaign activity.' }); }
+  });
+
+  app.post('/api/campaign/claim', requireAuth, async (req, res) => {
+    try {
+      const { guestId } = req.body || {};
+      if (typeof guestId !== 'string' || !/^[A-Z0-9-]{6,80}$/i.test(guestId)) return res.status(400).json({ error: 'Invalid campaign progress token.' });
+      const userId = req.session.user!.id;
+      const guest = await db.get<any>('SELECT campaign_key AS campaignKey FROM campaign_guests WHERE guest_token=?', [guestId]);
+      if (guest?.campaignKey) {
+        await db.transaction(async () => {
+          await db.run('UPDATE campaign_guests SET user_id=? WHERE campaign_key=?', [userId, guest.campaignKey]);
+          await db.run('UPDATE campaign_share_events SET user_id=? WHERE campaign_key=?', [userId, guest.campaignKey]);
+          await db.run('UPDATE campaign_visitors SET user_id=? WHERE campaign_key=?', [userId, guest.campaignKey]);
+        });
+      }
+      const code = await db.get<any>('SELECT code FROM referral_codes WHERE user_id=?', [userId]);
+      if (code?.code) {
+        await db.run('UPDATE campaign_share_events SET user_id=? WHERE campaign_key=? AND user_id IS NULL', [userId, code.code]);
+        await db.run('UPDATE campaign_visitors SET user_id=? WHERE campaign_key=? AND user_id IS NULL', [userId, code.code]);
+      }
+      const shares = await db.get<any>('SELECT COUNT(*) AS count FROM campaign_share_events WHERE user_id=?', [userId]);
+      const reached = await db.get<any>('SELECT COUNT(*) AS count FROM campaign_visitors WHERE user_id=?', [userId]);
+      const badgeUnlocked = Number(shares?.count || 0) >= 1;
+      res.json({ success: true, shares: Number(shares?.count || 0), reached: Number(reached?.count || 0), badgeUnlocked, badge: badgeUnlocked ? 'First Share' : null });
+    } catch (error) { console.error('Campaign claim failed:', error); res.status(500).json({ error: 'Could not claim campaign progress.' }); }
+  });
+
   // Register
   app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
@@ -289,7 +428,9 @@ async function startServer() {
       const leaderboard = await db.all<any>("SELECT u.name, COUNT(r.id) AS verifiedReferrals FROM referrals r JOIN users u ON u.id = r.referrer_id WHERE r.status='verified' GROUP BY r.referrer_id, u.name ORDER BY verifiedReferrals DESC, u.name ASC LIMIT 10");
       const campaign = await db.get<any>('SELECT active, reward_amount AS rewardAmount, reward_slots AS rewardSlots FROM referral_campaign WHERE id = 1');
       const awarded = await db.get<any>("SELECT COUNT(*) AS count FROM referrals WHERE status='verified' AND reward_slot IS NOT NULL");
-      res.json({ code: referralCode, verified: Number(counts?.verified ?? 0), pending: Number(counts?.pending ?? 0), rewardSlot: counts?.rewardSlot ?? null, badges, leaderboard, campaign: { active: Boolean(campaign?.active), rewardAmount: Number(campaign?.rewardAmount ?? 2500), rewardSlots: Number(campaign?.rewardSlots ?? 100), awardedSlots: Number(awarded?.count ?? 0) } });
+      const campaignShares = await db.get<any>('SELECT COUNT(*) AS count FROM campaign_share_events WHERE user_id=?', [userId]);
+      const campaignReached = await db.get<any>('SELECT COUNT(*) AS count FROM campaign_visitors WHERE user_id=?', [userId]);
+      res.json({ code: referralCode, verified: Number(counts?.verified ?? 0), pending: Number(counts?.pending ?? 0), rewardSlot: counts?.rewardSlot ?? null, badges, leaderboard, campaignShares: Number(campaignShares?.count ?? 0), campaignReached: Number(campaignReached?.count ?? 0), campaign: { active: Boolean(campaign?.active), rewardAmount: Number(campaign?.rewardAmount ?? 2500), rewardSlots: Number(campaign?.rewardSlots ?? 100), awardedSlots: Number(awarded?.count ?? 0) } });
     } catch (error) { console.error('Referral dashboard failed:', error); res.status(500).json({ error: 'Could not load referral dashboard.' }); }
   });
 
@@ -370,14 +511,14 @@ async function startServer() {
   app.get('/api/analytics/stats', requireAdmin, async (req, res) => {
     try {
       const userCounts = await db.get<{ usersCount: number; ownersCount: number }>(`
-        SELECT 
+        SELECT
           SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) as usersCount,
           SUM(CASE WHEN role = 'owner' THEN 1 ELSE 0 END) as ownersCount
         FROM users;
       `);
 
       const roomCounts = await db.get<{ totalRooms: number; availableRooms: number; bookedRooms: number }>(`
-        SELECT 
+        SELECT
           COUNT(*) as totalRooms,
           SUM(CASE WHEN status = 'Available' THEN 1 ELSE 0 END) as availableRooms,
           SUM(CASE WHEN status = 'Booked' THEN 1 ELSE 0 END) as bookedRooms
@@ -1041,7 +1182,7 @@ async function startServer() {
       const now = new Date().toISOString();
 
       await db.run(
-        `UPDATE rooms SET 
+        `UPDATE rooms SET
           title = ?, description = ?, price = ?, location = ?, city = ?, room_type = ?, status = ?,
           photos = ?, amenities = ?, contact_name = ?, contact_phone = ?, contact_email = ?, contact_whatsapp = ?,
           latitude = ?, longitude = ?, is_exact_location = ?, updated_at = ?

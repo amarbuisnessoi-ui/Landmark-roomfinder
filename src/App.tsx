@@ -13,6 +13,7 @@ import { UserDashboard } from './components/UserDashboard';
 import { Footer } from './components/Footer';
 import { InteractiveMap } from './components/InteractiveMap';
 import { RoommateHub } from './components/RoommateHub';
+import { CampaignLanding } from './components/CampaignLanding';
 import { Building2, Sparkles, LayoutGrid, Map as MapIcon, Columns } from 'lucide-react';
 
 export default function App() {
@@ -57,10 +58,23 @@ export default function App() {
       const user = await api.getCurrentUser();
       if (user) {
         setCurrentUser(user);
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('campaignClaim') === '1') {
+          const guestId = localStorage.getItem('lrf_campaign_guest_id');
+          if (guestId) {
+            try { const claimed = await api.claimCampaignProgress(guestId); if (claimed.badgeUnlocked) showToast('Your First Share badge is saved to your account!'); }
+            catch (error) { console.warn('Campaign progress claim failed:', error); }
+          }
+          setActiveTab(user.role === 'admin' ? 'admin' : user.role === 'owner' ? 'owner' : 'user-dash');
+          window.history.replaceState({}, '', '/');
+          localStorage.removeItem('lrf_campaign_claim_pending');
+        }
         if (user.role === 'admin') {
           const statsData = await api.getAnalytics();
           setStats(statsData);
         }
+      } else if (new URLSearchParams(window.location.search).get('campaignClaim') === '1') {
+        setAuthModalMode('login');
       }
     } catch (e) {
       console.warn('Error loading initial API data:', e);
@@ -69,9 +83,10 @@ export default function App() {
 
   useEffect(() => {
     loadInitialData();
-    // Referral links open the registration form directly so attribution is not lost.
     const params = new URLSearchParams(window.location.search);
-    if (params.get('ref')) setAuthModalMode('register');
+    if (params.get('oauthSuccess') === '1') showToast('Signed in with Google successfully!');
+    if (params.get('oauthError')) showToast(params.get('oauthError') || 'Google sign-in failed.');
+    if (params.get('campaignClaim') === '1' && params.get('oauthSuccess') !== '1') setAuthModalMode('login');
   }, []);
 
   // Filter Rooms
@@ -116,6 +131,14 @@ export default function App() {
     const result = await api.login(data);
     setCurrentUser(result.user);
     showToast(`Welcome back, ${result.user.name}!`);
+    if (new URLSearchParams(window.location.search).get('campaignClaim') === '1') {
+      const guestId = localStorage.getItem('lrf_campaign_guest_id');
+      if (guestId) { try { const claimed = await api.claimCampaignProgress(guestId); if (claimed.badgeUnlocked) showToast('Your First Share badge is saved to your account!'); } catch (e) { console.warn('Campaign claim failed:', e); } }
+      window.history.replaceState({}, '', '/');
+      localStorage.removeItem('lrf_campaign_claim_pending');
+      setActiveTab(result.user.role === 'admin' ? 'admin' : result.user.role === 'owner' ? 'owner' : 'user-dash');
+      return;
+    }
 
     // Automatic redirect for Admin if role is admin
     if (result.user.role === 'admin') {
@@ -141,7 +164,14 @@ export default function App() {
     const result = await api.register(data);
     setCurrentUser(result.user);
     showToast(`Account created successfully! Welcome, ${result.user.name}`);
-
+    if (new URLSearchParams(window.location.search).get('campaignClaim') === '1') {
+      const guestId = localStorage.getItem('lrf_campaign_guest_id');
+      if (guestId) { try { const claimed = await api.claimCampaignProgress(guestId); if (claimed.badgeUnlocked) showToast('Your First Share badge is saved to your account!'); } catch (e) { console.warn('Campaign claim failed:', e); } }
+      window.history.replaceState({}, '', '/');
+      localStorage.removeItem('lrf_campaign_claim_pending');
+      setActiveTab(result.user.role === 'admin' ? 'admin' : result.user.role === 'owner' ? 'owner' : 'user-dash');
+      return;
+    }
     if (result.user.role === 'admin') {
       setActiveTab('admin');
       loadAdminData();
@@ -291,6 +321,8 @@ export default function App() {
 
   const availableCount = rooms.filter((r) => r.status === 'Available').length;
   const favoriteRoomsList = rooms.filter((r) => favorites.includes(r.id));
+
+  if (window.location.pathname === '/spread' || window.location.pathname.startsWith('/spread/')) return <CampaignLanding />;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-blue-600 selection:text-white">

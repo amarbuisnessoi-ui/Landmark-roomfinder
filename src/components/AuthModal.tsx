@@ -40,7 +40,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (mode === 'login') {
         await onLogin({ email, password });
       } else {
-        await onRegister({ name, email, phone, password, role, referralCode: new URLSearchParams(window.location.search).get('ref') || undefined });
+        await onRegister({ name, email, phone, password, role, referralCode: new URLSearchParams(window.location.search).get('ref') || localStorage.getItem('lrf_campaign_referral_code') || undefined });
       }
       onClose();
     } catch (err: any) {
@@ -108,8 +108,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </div>
 
+        <div className="px-6 pt-5">
+          <a href={`/api/auth/google?${[((new URLSearchParams(window.location.search).get('ref') || localStorage.getItem('lrf_campaign_referral_code')) ? `ref=${encodeURIComponent(new URLSearchParams(window.location.search).get('ref') || localStorage.getItem('lrf_campaign_referral_code') || '')}` : ''), (new URLSearchParams(window.location.search).get('campaignClaim') === '1' ? 'campaignClaim=1' : '')].filter(Boolean).join('&')}`} className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50">
+            <svg aria-hidden="true" viewBox="0 0 48 48" className="h-5 w-5"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 3.02 13.22l7.98 6.19C12.89 13.72 18.01 9.5 24 9.5Z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.74 7.18l7.65 5.94c4.47-4.13 7.13-10.2 7.13-17.59Z"/><path fill="#FBBC05" d="M10.99 28.59A14.4 14.4 0 0 1 10.25 24c0-1.59.27-3.13.74-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 3.02 10.78l7.97-6.19Z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.81l-7.65-5.94c-2.13 1.43-4.85 2.28-8.25 2.28-5.99 0-11.11-4.22-13-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/></svg>
+            Continue with Google
+          </a>
+          <div className="my-4 flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider text-slate-400"><span className="h-px flex-1 bg-slate-200"/>or use email<span className="h-px flex-1 bg-slate-200"/></div>
+        </div>
+
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="px-6 pb-6 space-y-4">
           {error && (
             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
               ⚠️ {error}
