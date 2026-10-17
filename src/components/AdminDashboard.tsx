@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { api } from '../lib/api';
 import { AnalyticsStats, Room, User } from '../types';
 import {
   ShieldCheck,
@@ -13,7 +14,8 @@ import {
   RefreshCw,
   CheckCircle2,
   XCircle,
-  BarChart3
+  BarChart3,
+  Award
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -47,7 +49,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onDeleteRoom,
   onRefresh
 }) => {
-  const [activeTab, setActiveTab] = useState<'analytics' | 'users' | 'rooms'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'users' | 'rooms' | 'referrals'>('analytics');
+  const [campaign, setCampaign] = useState<any>(null);
+  const [referrals, setReferrals] = useState<any[]>([]);
+  const [referralError, setReferralError] = useState('');
+  const [referralBusy, setReferralBusy] = useState(false);
+  const loadReferralAdmin = async () => { try { const [c, r] = await Promise.all([api.getReferralCampaign(), api.getAdminReferrals()]); setCampaign(c); setReferrals(r); setReferralError(''); } catch (e: any) { setReferralError(e.message || 'Could not load referral campaign.'); } };
+  useEffect(() => { if (activeTab === 'referrals') void loadReferralAdmin(); }, [activeTab]);
   const [userQuery, setUserQuery] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'user' | 'owner'>('all');
   const [roomQuery, setRoomQuery] = useState('');
@@ -191,9 +199,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <Building className="w-4 h-4" />
           <span>Manage Rooms ({rooms.length})</span>
         </button>
+        <button onClick={() => setActiveTab('referrals')} className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition-all cursor-pointer ${activeTab === 'referrals' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
+          <Award className="w-4 h-4" /><span>Referrals & Rewards</span>
+        </button>
       </div>
 
       {/* Analytics Tab */}
+      {activeTab === 'referrals' && (
+        <section className="space-y-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-xl font-extrabold">Referral campaign control</h3><p className="mt-1 text-sm text-slate-500">Review referrals before verification. Only verified referrals count toward badges and leaderboard.</p></div><button onClick={() => void loadReferralAdmin()} className="rounded-xl border px-3 py-2 text-sm font-bold">Refresh</button></div>
+          {referralError && <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{referralError}</p>}
+          {campaign && <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4"><div><div className="font-bold">Campaign is {campaign.active ? 'ACTIVE' : 'PAUSED'}</div><p className="text-xs text-slate-500">Rs. {Number(campaign.rewardAmount || 2500).toLocaleString()} per eligible winner · {campaign.awardedSlots || 0}/{campaign.rewardSlots || 100} slots awarded</p></div><button disabled={referralBusy} onClick={async () => { setReferralBusy(true); try { await api.setReferralCampaign(!campaign.active); await loadReferralAdmin(); } catch (e: any) { setReferralError(e.message || 'Could not change campaign status.'); } finally { setReferralBusy(false); } }} className={`rounded-xl px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50 ${campaign.active ? 'bg-rose-600' : 'bg-emerald-600'}`}>{campaign.active ? 'Pause campaign' : 'Activate campaign'}</button></div>}
+          <div><h4 className="mb-3 font-extrabold">Referral review queue ({referrals.filter(r => r.status === 'pending').length} pending)</h4>{referrals.length === 0 ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No referrals have been recorded yet.</p> : <div className="space-y-3">{referrals.map(r => <div key={r.id} className="flex flex-col gap-3 rounded-2xl border border-slate-100 p-4 md:flex-row md:items-center md:justify-between"><div className="min-w-0"><div className="font-bold">{r.referredName} <span className="font-normal text-slate-500">({r.referredEmail})</span></div><div className="text-xs text-slate-500">Invited by {r.referrerName} · {r.referrerEmail}</div><div className="mt-1 text-xs">Status: <span className="font-bold">{r.status}</span>{r.rewardSlot ? ` · Reward slot #${r.rewardSlot}` : ''} · {new Date(r.createdAt).toLocaleString()}</div></div>{r.status === 'pending' && <div className="flex gap-2"><button disabled={referralBusy} onClick={async () => { setReferralBusy(true); try { await api.reviewReferral(r.id, 'verified'); await loadReferralAdmin(); } catch (e: any) { setReferralError(e.message || 'Review failed.'); } finally { setReferralBusy(false); } }} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white">Verify</button><button disabled={referralBusy} onClick={async () => { setReferralBusy(true); try { await api.reviewReferral(r.id, 'rejected'); await loadReferralAdmin(); } catch (e: any) { setReferralError(e.message || 'Review failed.'); } finally { setReferralBusy(false); } }} className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">Reject</button></div>}</div>)}</div>}</div>
+          <p className="text-xs leading-relaxed text-slate-400">Verify only legitimate new users. Reward slots are assigned from the first available slot when a referral is verified while the campaign is active; pausing the campaign prevents new slot assignments. Reward payment itself must be handled and confirmed by the campaign operator.</p>
+        </section>
+      )}
+
       {activeTab === 'analytics' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Chart 1: Traffic Reach Trend */}

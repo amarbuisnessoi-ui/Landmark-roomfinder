@@ -52,6 +52,32 @@ async function initializeDatabase() {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );`,
+      `CREATE TABLE IF NOT EXISTS referral_campaign (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        active INTEGER NOT NULL DEFAULT 0,
+        reward_amount INTEGER NOT NULL DEFAULT 2500,
+        reward_slots INTEGER NOT NULL DEFAULT 100,
+        updated_at TEXT NOT NULL
+      );`,
+      `CREATE TABLE IF NOT EXISTS referral_codes (
+        user_id TEXT PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );`,
+      `CREATE TABLE IF NOT EXISTS referrals (
+        id TEXT PRIMARY KEY,
+        referrer_id TEXT NOT NULL,
+        referred_user_id TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','verified','rejected')),
+        reward_slot INTEGER UNIQUE,
+        created_at TEXT NOT NULL,
+        verified_at TEXT,
+        FOREIGN KEY (referrer_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (referred_user_id) REFERENCES users(id) ON DELETE CASCADE,
+        CHECK(referrer_id <> referred_user_id)
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_referrals_referrer_status ON referrals(referrer_id, status);`,
       `CREATE TABLE IF NOT EXISTS rooms (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -202,6 +228,8 @@ async function initializeDatabase() {
     for (const sql of schema) {
       await client.execute({ sql });
     }
+
+    await client.execute({ sql: `INSERT OR IGNORE INTO referral_campaign (id, active, reward_amount, reward_slots, updated_at) VALUES (1, 0, 2500, 100, ?);`, args: [new Date().toISOString()] });
 
     const countResult = await client.execute({
       sql: 'SELECT COUNT(*) AS count FROM users'

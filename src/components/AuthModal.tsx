@@ -12,6 +12,7 @@ interface AuthModalProps {
     phone: string;
     password: string;
     role: 'user' | 'owner';
+    referralCode?: string;
   }) => Promise<void>;
 }
 
@@ -39,7 +40,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (mode === 'login') {
         await onLogin({ email, password });
       } else {
-        await onRegister({ name, email, phone, password, role });
+        await onRegister({ name, email, phone, password, role, referralCode: new URLSearchParams(window.location.search).get('ref') || undefined });
       }
       onClose();
     } catch (err: any) {

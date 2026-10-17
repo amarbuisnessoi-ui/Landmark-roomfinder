@@ -2,6 +2,7 @@ import React from 'react';
 import { Inquiry, Room, User } from '../types';
 import { User as UserIcon, Heart, MessageSquare, Building, Phone, Mail } from 'lucide-react';
 import { RoomCard } from './RoomCard';
+import { ReferralHub } from './ReferralHub';
 
 interface UserDashboardProps {
   currentUser: User;
@@ -35,6 +36,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      <ReferralHub />
 
       {/* Saved Favorite Rooms Section */}
       <div className="space-y-4">

@@ -128,7 +128,7 @@ async function startServer() {
   // Register
   app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
-      const { name, email, phone, password, role } = req.body || {};
+      const { name, email, phone, password, role, referralCode } = req.body || {};
 
       const cleanName = sanitizeText(name);
       const cleanEmail = email ? String(email).trim().toLowerCase() : '';
@@ -164,6 +164,16 @@ async function startServer() {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
         [newUserId, cleanName, cleanEmail, cleanPhone, passwordHash, assignedRole, now, now]
       );
+      // Give each new account a permanent, non-guessable referral code.
+      const ownReferralCode = crypto.randomBytes(5).toString('hex').toUpperCase();
+      await db.run('INSERT INTO referral_codes (user_id, code, created_at) VALUES (?, ?, ?)', [newUserId, ownReferralCode, now]);
+      // Attribute only genuine new accounts; self-referrals are explicitly rejected.
+      if (typeof referralCode === 'string' && referralCode.trim()) {
+        const referrer = await db.get<{ user_id: string }>('SELECT user_id FROM referral_codes WHERE code = ?', [referralCode.trim().toUpperCase()]);
+        if (referrer && referrer.user_id !== newUserId) {
+          await db.run('INSERT OR IGNORE INTO referrals (id, referrer_id, referred_user_id, status, created_at) VALUES (?, ?, ?, ?, ?)', [`ref-${crypto.randomUUID()}`, referrer.user_id, newUserId, 'pending', now]);
+        }
+      }
 
       const sessionUser = {
         id: newUserId,
@@ -251,6 +261,82 @@ async function startServer() {
   });
 
   // Track Page Views / Reach
+  // Referral campaign: accurate counts, transparent reward slots, admin verification.
+  app.get('/api/referrals/campaign', async (_req, res) => {
+    try {
+      const campaign = await db.get<any>('SELECT active, reward_amount AS rewardAmount, reward_slots AS rewardSlots FROM referral_campaign WHERE id = 1');
+      const awarded = await db.get<any>("SELECT COUNT(*) AS count FROM referrals WHERE status = 'verified' AND reward_slot IS NOT NULL");
+      res.json({ active: Boolean(campaign?.active), rewardAmount: Number(campaign?.rewardAmount ?? 2500), rewardSlots: Number(campaign?.rewardSlots ?? 100), awardedSlots: Number(awarded?.count ?? 0) });
+    } catch (error) { console.error('Referral campaign read failed:', error); res.status(500).json({ error: 'Could not load referral campaign.' }); }
+  });
+
+  app.get('/api/referrals/me', requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.user!.id;
+      const code = await db.get<any>('SELECT code FROM referral_codes WHERE user_id = ?', [userId]);
+      let referralCode = code?.code as string | undefined;
+      if (!referralCode) {
+        referralCode = crypto.randomBytes(5).toString('hex').toUpperCase();
+        await db.run('INSERT OR IGNORE INTO referral_codes (user_id, code, created_at) VALUES (?, ?, ?)', [userId, referralCode, new Date().toISOString()]);
+        const saved = await db.get<any>('SELECT code FROM referral_codes WHERE user_id = ?', [userId]);
+        referralCode = saved?.code;
+      }
+      const counts = await db.get<any>("SELECT SUM(CASE WHEN status='verified' THEN 1 ELSE 0 END) AS verified, SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending, MAX(reward_slot) AS rewardSlot FROM referrals WHERE referrer_id = ?", [userId]);
+      const badges = [
+        { name: 'First Invite', threshold: 1 }, { name: 'Rising Star', threshold: 10 },
+        { name: 'Growth Champion', threshold: 50 }, { name: 'Referral Legend', threshold: 100 }
+      ].filter(b => Number(counts?.verified ?? 0) >= b.threshold).map(b => b.name);
+      const leaderboard = await db.all<any>("SELECT u.name, COUNT(r.id) AS verifiedReferrals FROM referrals r JOIN users u ON u.id = r.referrer_id WHERE r.status='verified' GROUP BY r.referrer_id, u.name ORDER BY verifiedReferrals DESC, u.name ASC LIMIT 10");
+      const campaign = await db.get<any>('SELECT active, reward_amount AS rewardAmount, reward_slots AS rewardSlots FROM referral_campaign WHERE id = 1');
+      const awarded = await db.get<any>("SELECT COUNT(*) AS count FROM referrals WHERE status='verified' AND reward_slot IS NOT NULL");
+      res.json({ code: referralCode, verified: Number(counts?.verified ?? 0), pending: Number(counts?.pending ?? 0), rewardSlot: counts?.rewardSlot ?? null, badges, leaderboard, campaign: { active: Boolean(campaign?.active), rewardAmount: Number(campaign?.rewardAmount ?? 2500), rewardSlots: Number(campaign?.rewardSlots ?? 100), awardedSlots: Number(awarded?.count ?? 0) } });
+    } catch (error) { console.error('Referral dashboard failed:', error); res.status(500).json({ error: 'Could not load referral dashboard.' }); }
+  });
+
+  app.patch('/api/admin/referrals/campaign', requireAdmin, async (req, res) => {
+    try {
+      const active = req.body?.active === true ? 1 : 0;
+      await db.run('UPDATE referral_campaign SET active = ?, updated_at = ? WHERE id = 1', [active, new Date().toISOString()]);
+      res.json({ active: Boolean(active) });
+    } catch (error) { console.error('Campaign update failed:', error); res.status(500).json({ error: 'Could not update campaign.' }); }
+  });
+
+  app.get('/api/admin/referrals', requireAdmin, async (_req, res) => {
+    try {
+      const referrals = await db.all<any>("SELECT r.id, r.status, r.created_at AS createdAt, r.verified_at AS verifiedAt, r.reward_slot AS rewardSlot, referrer.name AS referrerName, referrer.email AS referrerEmail, referred.name AS referredName, referred.email AS referredEmail FROM referrals r JOIN users referrer ON referrer.id=r.referrer_id JOIN users referred ON referred.id=r.referred_user_id ORDER BY r.created_at DESC LIMIT 500");
+      res.json(referrals);
+    } catch (error) { console.error('Referral admin list failed:', error); res.status(500).json({ error: 'Could not load referrals.' }); }
+  });
+
+  app.patch('/api/admin/referrals/:id', requireAdmin, async (req, res) => {
+    try {
+      const status = req.body?.status;
+      if (!['verified', 'rejected'].includes(status)) return res.status(400).json({ error: 'Status must be verified or rejected.' });
+      const result = await db.get<any>('SELECT id, status FROM referrals WHERE id = ?', [req.params.id]);
+      if (!result) return res.status(404).json({ error: 'Referral not found.' });
+      await db.transaction(async () => {
+        if (status === 'rejected') {
+          await db.run("UPDATE referrals SET status='rejected', reward_slot=NULL, verified_at=NULL WHERE id=?", [req.params.id]);
+          return;
+        }
+        const existing = await db.get<any>("SELECT reward_slot FROM referrals WHERE id=?", [req.params.id]);
+        if (existing?.reward_slot) {
+          await db.run("UPDATE referrals SET status='verified', verified_at=? WHERE id=?", [new Date().toISOString(), req.params.id]);
+          return;
+        }
+        const campaign = await db.get<any>('SELECT active, reward_slots FROM referral_campaign WHERE id=1');
+        let slot: number | null = null;
+        if (campaign?.active) {
+          const used = await db.all<any>('SELECT reward_slot FROM referrals WHERE reward_slot IS NOT NULL ORDER BY reward_slot');
+          const occupied = new Set(used.map((row: any) => Number(row.reward_slot)));
+          for (let n = 1; n <= Number(campaign.reward_slots); n++) if (!occupied.has(n)) { slot = n; break; }
+        }
+        await db.run("UPDATE referrals SET status='verified', verified_at=?, reward_slot=? WHERE id=?", [new Date().toISOString(), slot, req.params.id]);
+      });
+      res.json({ success: true, status });
+    } catch (error) { console.error('Referral review failed:', error); res.status(500).json({ error: 'Could not review referral.' }); }
+  });
+
   app.post('/api/analytics/view', async (req, res) => {
     try {
       const { roomId } = req.body || {};

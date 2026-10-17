@@ -57,6 +57,37 @@ export const api = {
     }
   },
 
+  async getReferralDashboard(): Promise<any> {
+    const res = await fetch('/api/referrals/me', { credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load referrals');
+    return data;
+  },
+
+  async getReferralCampaign(): Promise<any> {
+    const res = await fetch('/api/referrals/campaign', { credentials: 'include' });
+    if (!res.ok) throw new Error('Failed to load campaign');
+    return res.json();
+  },
+
+  async setReferralCampaign(active: boolean): Promise<void> {
+    const res = await fetch('/api/admin/referrals/campaign', { method: 'PATCH', headers: await getMutationHeaders(), credentials: 'include', body: JSON.stringify({ active }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to update campaign');
+  },
+
+  async getAdminReferrals(): Promise<any[]> {
+    const res = await fetch('/api/admin/referrals', { credentials: 'include' });
+    if (!res.ok) throw new Error('Failed to load referral reviews');
+    return res.json();
+  },
+
+  async reviewReferral(id: string, status: 'verified' | 'rejected'): Promise<void> {
+    const res = await fetch(`/api/admin/referrals/${encodeURIComponent(id)}`, { method: 'PATCH', headers: await getMutationHeaders(), credentials: 'include', body: JSON.stringify({ status }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to review referral');
+  },
+
   async getAnalytics(): Promise<AnalyticsStats> {
     const res = await fetch('/api/analytics/stats', { credentials: 'include' });
     if (!res.ok) throw new Error('Failed to load analytics');
@@ -69,6 +100,7 @@ export const api = {
     phone: string;
     password: string;
     role: 'user' | 'owner';
+    referralCode?: string;
   }): Promise<{ user: User; message: string }> {
     const headers = await getMutationHeaders();
     const res = await fetch('/api/auth/register', {

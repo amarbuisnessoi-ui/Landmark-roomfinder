@@ -69,6 +69,9 @@ export default function App() {
 
   useEffect(() => {
     loadInitialData();
+    // Referral links open the registration form directly so attribution is not lost.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('ref')) setAuthModalMode('register');
   }, []);
 
   // Filter Rooms
@@ -133,6 +136,7 @@ export default function App() {
     phone: string;
     password: string;
     role: 'user' | 'owner';
+    referralCode?: string;
   }) => {
     const result = await api.register(data);
     setCurrentUser(result.user);
