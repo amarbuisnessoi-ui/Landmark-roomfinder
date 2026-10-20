@@ -117,7 +117,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {currentUser?.role === 'user' && (
+            {(currentUser?.role === 'user' || currentUser?.role === 'owner') && (
               <button
                 onClick={() => handleTabClick('user-dash')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all cursor-pointer ${
@@ -268,7 +268,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
-              {currentUser?.role === 'user' && (
+              {(currentUser?.role === 'user' || currentUser?.role === 'owner') && (
                 <button
                   onClick={() => handleTabClick('user-dash')}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
@@ -411,7 +411,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => {
               if (currentUser) {
                 if (currentUser.role === 'admin') handleTabClick('admin');
-                else if (currentUser.role === 'owner') handleTabClick('owner');
                 else handleTabClick('user-dash');
               } else {
                 onOpenAuth('login');

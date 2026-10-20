@@ -43,6 +43,18 @@ export const api = {
     }
   },
 
+  async becomeOwner(): Promise<{ user: User; message: string }> {
+    const res = await fetch('/api/auth/become-owner', {
+      method: 'POST',
+      headers: await getMutationHeaders(),
+      credentials: 'include'
+    });
+    const result = await res.json();
+    if (result.csrfToken) cachedCsrfToken = result.csrfToken;
+    if (!res.ok) throw new Error(result.error || 'Could not enable owner access.');
+    return result;
+  },
+
   async trackView(roomId?: string): Promise<void> {
     try {
       const headers = await getMutationHeaders();

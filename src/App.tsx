@@ -15,11 +15,14 @@ import { InteractiveMap } from './components/InteractiveMap';
 import { RoommateHub } from './components/RoommateHub';
 import { CampaignLanding } from './components/CampaignLanding';
 import { AgentPublicPage } from './components/AgentPublicPage';
-import { Building2, Sparkles, LayoutGrid, Map as MapIcon, Columns } from 'lucide-react';
+import { Building2, Sparkles, LayoutGrid, Map as MapIcon, Columns, LoaderCircle, RefreshCw, AlertCircle } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(true);
+  const [roomsError, setRoomsError] = useState<string | null>(null);
+  const [becomingOwner, setBecomingOwner] = useState(false);
   const [stats, setStats] = useState<AnalyticsStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
@@ -48,8 +51,10 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Initial Data Fetch
+  // Load room data separately from session data so a room API failure doesn't hide the account UI.
   const loadInitialData = async () => {
+    setRoomsLoading(true);
+    setRoomsError(null);
     try {
       await api.trackView();
       const roomsData = await api.getRooms();
@@ -60,8 +65,14 @@ export default function App() {
         const sharedRoom = roomsData.find((room) => room.id === sharedRoomId);
         if (sharedRoom) setSelectedRoom(sharedRoom);
       }
+    } catch (e) {
+      console.warn('Error loading rooms:', e);
+      setRoomsError('We could not load rooms right now. Check your connection and try again.');
+    } finally {
+      setRoomsLoading(false);
+    }
 
-      // Check active user session
+    try {
       const user = await api.getCurrentUser();
       if (user) {
         setCurrentUser(user);
@@ -84,7 +95,7 @@ export default function App() {
         setAuthModalMode('login');
       }
     } catch (e) {
-      console.warn('Error loading initial API data:', e);
+      console.warn('Error loading initial account data:', e);
     }
   };
 
@@ -96,8 +107,10 @@ export default function App() {
     if (params.get('campaignClaim') === '1' && params.get('oauthSuccess') !== '1') setAuthModalMode('login');
   }, []);
 
-  // Filter Rooms
+  // Filter rooms and show progress without flashing a false empty state.
   const handleSearch = async () => {
+    setRoomsLoading(true);
+    setRoomsError(null);
     try {
       const filtered = await api.getRooms({
         query: filters.query,
@@ -108,6 +121,9 @@ export default function App() {
       setRooms(filtered);
     } catch (e) {
       console.error(e);
+      setRoomsError('Search failed. Please check your connection and try again.');
+    } finally {
+      setRoomsLoading(false);
     }
   };
 
@@ -121,8 +137,33 @@ export default function App() {
       status: 'All',
       amenities: []
     });
-    const all = await api.getRooms();
-    setRooms(all);
+    setRoomsLoading(true);
+    setRoomsError(null);
+    try {
+      const all = await api.getRooms();
+      setRooms(all);
+    } catch (e) {
+      console.error(e);
+      setRoomsError('Could not reload rooms. Please try again.');
+    } finally {
+      setRoomsLoading(false);
+    }
+  };
+
+  const handleBecomeOwner = async () => {
+    if (!currentUser || currentUser.role !== 'user' || becomingOwner) return;
+    setBecomingOwner(true);
+    try {
+      const result = await api.becomeOwner();
+      setCurrentUser(result.user);
+      setActiveTab('owner');
+      await loadOwnerData(result.user.id);
+      showToast('Owner access enabled. You can still search for rooms with this account.');
+    } catch (error: any) {
+      showToast(error?.message || 'Could not enable owner access. Please try again.');
+    } finally {
+      setBecomingOwner(false);
+    }
   };
 
   // Favorite toggle
@@ -449,19 +490,34 @@ export default function App() {
                 </div>
               </div>
 
-              {rooms.length === 0 ? (
+              {roomsLoading ? (
+                <div role="status" aria-live="polite" className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
+                  <div className="mb-5 flex items-center justify-center gap-2 text-sm font-semibold text-slate-600">
+                    <LoaderCircle className="h-5 w-5 animate-spin text-amber-600" />
+                    <span>Finding rooms for you…</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 sm:gap-5">
+                    {Array.from({ length: 4 }).map((_, index) => (
+                      <div key={index} className="animate-pulse overflow-hidden rounded-2xl border border-slate-100 bg-white">
+                        <div className="aspect-[4/3] bg-slate-200" />
+                        <div className="space-y-3 p-3"><div className="h-3 w-3/4 rounded bg-slate-200" /><div className="h-3 w-1/2 rounded bg-slate-100" /><div className="h-5 w-2/5 rounded bg-slate-200" /></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : roomsError ? (
+                <div role="alert" className="space-y-3 rounded-3xl border border-rose-200 bg-white p-8 text-center">
+                  <AlertCircle className="mx-auto h-10 w-10 text-rose-500" />
+                  <h3 className="text-base font-bold text-slate-800">Rooms could not load</h3>
+                  <p className="mx-auto max-w-sm text-sm text-slate-500">{roomsError}</p>
+                  <button onClick={handleSearch} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700"><RefreshCw className="h-4 w-4" /> Try Again</button>
+                </div>
+              ) : rooms.length === 0 ? (
                 <div className="text-center py-16 sm:py-20 bg-white rounded-3xl border border-slate-200 shadow-xs space-y-3 sm:space-y-4 p-4">
                   <Building2 className="w-10 h-10 sm:w-12 sm:h-12 text-slate-400 mx-auto" />
                   <h3 className="text-base sm:text-lg font-bold text-slate-800">No rooms match your search</h3>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                    Try adjusting your location query, price filter, or room type selection.
-                  </p>
-                  <button
-                    onClick={handleResetFilters}
-                    className="px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold cursor-pointer shadow-md shadow-blue-200 min-h-[42px]"
-                  >
-                    Reset Search Filters
-                  </button>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">Try adjusting your location query, price filter, or room type selection.</p>
+                  <button onClick={handleResetFilters} className="px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold cursor-pointer shadow-md shadow-blue-200 min-h-[42px]">Reset Search Filters</button>
                 </div>
               ) : (
                 <>
@@ -561,6 +617,8 @@ export default function App() {
             inquiries={inquiries}
             onSelectRoom={handleSelectRoom}
             onToggleFavorite={toggleFavorite}
+            onBecomeOwner={handleBecomeOwner}
+            becomingOwner={becomingOwner}
           />
         )}
       </main>

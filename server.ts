@@ -125,6 +125,30 @@ async function startServer() {
     res.json({ user: null, csrfToken });
   });
 
+  // Upgrade an existing renter account to owner without creating a duplicate account.
+  app.post('/api/auth/become-owner', requireAuth, async (req, res) => {
+    try {
+      const userId = req.session.user!.id;
+      const now = new Date().toISOString();
+      const dbUser = await db.get<{ id: string; role: 'user' | 'owner' | 'admin' }>(
+        'SELECT id, role FROM users WHERE id = ?', [userId]
+      );
+      if (!dbUser) return res.status(404).json({ error: 'Account not found. Please sign in again.' });
+      if (dbUser.role === 'admin') return res.status(400).json({ error: 'Admin accounts cannot be changed to owner accounts.' });
+      if (dbUser.role === 'user') {
+        await db.run('UPDATE users SET role = ?, updated_at = ? WHERE id = ? AND role = ?', ['owner', now, userId, 'user']);
+      }
+      req.session.user = { ...req.session.user!, role: dbUser.role === 'admin' ? 'admin' : 'owner' };
+      req.session.save((err) => {
+        if (err) return res.status(500).json({ error: 'Owner access was updated, but the session could not be saved. Please refresh and sign in again.' });
+        return res.json({ user: req.session.user, message: 'Your account can now publish and manage rooms.' });
+      });
+    } catch (error) {
+      console.error('Become-owner request failed:', error);
+      res.status(500).json({ error: 'Could not enable owner access. Please try again.' });
+    }
+  });
+
   // Google OAuth: authorization-code flow with session-bound state and verified email.
   app.get('/api/auth/google', (req, res) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;

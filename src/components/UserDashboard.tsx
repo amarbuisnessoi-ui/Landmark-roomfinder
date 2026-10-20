@@ -1,6 +1,6 @@
 import React from 'react';
 import { Inquiry, Room, User } from '../types';
-import { User as UserIcon, Heart, MessageSquare, Building, Phone, Mail } from 'lucide-react';
+import { User as UserIcon, Heart, MessageSquare, Building, Phone, Mail, House, LoaderCircle } from 'lucide-react';
 import { RoomCard } from './RoomCard';
 import { ReferralHub } from './ReferralHub';
 
@@ -10,6 +10,8 @@ interface UserDashboardProps {
   inquiries: Inquiry[];
   onSelectRoom: (room: Room) => void;
   onToggleFavorite: (roomId: string) => void;
+  onBecomeOwner: () => void;
+  becomingOwner: boolean;
 }
 
 export const UserDashboard: React.FC<UserDashboardProps> = ({
@@ -17,7 +19,9 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   favoriteRooms,
   inquiries,
   onSelectRoom,
-  onToggleFavorite
+  onToggleFavorite,
+  onBecomeOwner,
+  becomingOwner
 }) => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 text-slate-800">
@@ -29,12 +33,27 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
           </div>
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-xs font-semibold mb-1">
-              <span>Verified Renter Account</span>
+              <span>{currentUser.role === 'owner' ? 'Renter & Owner Account' : 'Verified Renter Account'}</span>
             </div>
             <h1 className="text-3xl font-extrabold text-slate-900">{currentUser.name}</h1>
             <p className="text-xs text-slate-500">{currentUser.email} • {currentUser.phone || 'No phone set'}</p>
           </div>
         </div>
+        {currentUser.role === 'user' && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-white p-2 text-amber-700"><House className="h-5 w-5" /></div>
+              <div>
+                <h2 className="font-bold text-slate-900">Have a room to rent out?</h2>
+                <p className="text-sm text-slate-600">Use this same account to publish rooms and manage tenant inquiries.</p>
+              </div>
+            </div>
+            <button type="button" onClick={onBecomeOwner} disabled={becomingOwner} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-amber-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-70">
+              {becomingOwner ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <House className="h-4 w-4" />}
+              {becomingOwner ? 'Setting up owner access…' : 'Continue as Owner'}
+            </button>
+          </div>
+        )}
       </div>
 
       <ReferralHub />
