@@ -81,14 +81,8 @@ export function validatePhotoUrl(url: string): boolean {
 }
 
 export function validatePhotosArray(photos: any): string[] {
-  if (!Array.isArray(photos)) {
-    return ['https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80'];
-  }
-  const validPhotos = photos
+  if (!Array.isArray(photos)) return [];
+  return photos
     .filter((p) => typeof p === 'string' && validatePhotoUrl(p))
     .slice(0, 10); // Limit maximum 10 photos
-
-  return validPhotos.length > 0
-    ? validPhotos
-    : ['https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80'];
 }

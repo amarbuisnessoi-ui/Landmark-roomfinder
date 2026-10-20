@@ -1,23 +1,14 @@
 import React, { useState } from 'react';
 import { Room, User } from '../types';
 import { LocationPickerMap } from './LocationPickerMap';
-import { X, Upload, Plus, Image as ImageIcon, MapPin, DollarSign, Phone, Mail, Building, Check, Sparkles, Edit } from 'lucide-react';
+import { X, Upload, Image as ImageIcon, MapPin, DollarSign, Phone, Mail, Building, Check, Sparkles, Edit, Trash2, Star, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface AddRoomModalProps {
   onClose: () => void;
-  onSubmit: (roomData: Partial<Room>) => void;
+  onSubmit: (roomData: Partial<Room>) => void | Promise<void>;
   currentUser: User | null;
   roomToEdit?: Room | null;
 }
-
-const PRESET_PHOTOS = [
-  'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1502672023488-70e25813eb80?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1598928506311-c55ded91a20c?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80',
-  'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80'
-];
 
 const AMENITY_OPTIONS = [
   'WiFi',
@@ -41,21 +32,23 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
   roomToEdit
 }) => {
   const [title, setTitle] = useState(roomToEdit?.title || '');
-  const [city, setCity] = useState(roomToEdit?.city || 'New York');
+  const [city, setCity] = useState(roomToEdit?.city || 'Kathmandu');
   const [location, setLocation] = useState(roomToEdit?.location || '');
-  const [price, setPrice] = useState(roomToEdit ? String(roomToEdit.price) : '650');
+  const [price, setPrice] = useState(roomToEdit ? String(roomToEdit.price) : '');
   const [roomType, setRoomType] = useState<any>(roomToEdit?.roomType || 'Studio');
   const [description, setDescription] = useState(roomToEdit?.description || '');
   const [photoUrlInput, setPhotoUrlInput] = useState('');
-  const [photos, setPhotos] = useState<string[]>(
-    roomToEdit?.photos && roomToEdit.photos.length > 0 ? roomToEdit.photos : [PRESET_PHOTOS[0]]
-  );
+  const [photos, setPhotos] = useState<string[]>(roomToEdit?.photos || []);
+  const [photoError, setPhotoError] = useState('');
+  const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [amenities, setAmenities] = useState<string[]>(
     roomToEdit?.amenities || ['WiFi', 'Air Conditioning']
   );
   const [contactName, setContactName] = useState(roomToEdit?.contactName || currentUser?.name || '');
   const [contactPhone, setContactPhone] = useState(
-    roomToEdit?.contactPhone || currentUser?.phone || '+1 (555) 000-2222'
+    roomToEdit?.contactPhone || currentUser?.phone || ''
   );
   const [contactEmail, setContactEmail] = useState(
     roomToEdit?.contactEmail || currentUser?.email || ''
@@ -91,23 +84,105 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
   };
 
   const handleAddPhoto = () => {
-    if (photoUrlInput.trim()) {
-      setPhotos([...photos, photoUrlInput.trim()]);
-      setPhotoUrlInput('');
+    const url = photoUrlInput.trim();
+    if (!url) return;
+    if (photos.length >= 10) {
+      setPhotoError('You can add up to 10 photos per room.');
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      setPhotoError('Please enter a valid image URL starting with https:// or http://.');
+      return;
+    }
+    setPhotos((previous) => [...previous, url]);
+    setPhotoUrlInput('');
+    setPhotoError('');
+  };
+
+  // Resize phone photos before storing them in the room record. This avoids
+  // oversized JSON requests and makes uploads more reliable on mobile data.
+  const compressImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error(`${file.name} is not an image.`));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}. Please try another photo.`));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error(`Could not open ${file.name}. Please use a JPG, PNG, or WebP photo.`));
+      image.onload = () => {
+        const maxDimension = 1280;
+        const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) {
+          reject(new Error('Your browser could not process this photo.'));
+          return;
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        let compressed = canvas.toDataURL('image/jpeg', 0.68);
+        // Keep each image compact so ten photos fit inside the server's JSON body limit.
+        if (compressed.length > 750_000) {
+          const smallerCanvas = document.createElement('canvas');
+          const smallerScale = Math.min(1, 1024 / Math.max(image.width, image.height));
+          smallerCanvas.width = Math.max(1, Math.round(image.width * smallerScale));
+          smallerCanvas.height = Math.max(1, Math.round(image.height * smallerScale));
+          const smallerContext = smallerCanvas.getContext('2d');
+          if (smallerContext) {
+            smallerContext.drawImage(image, 0, 0, smallerCanvas.width, smallerCanvas.height);
+            compressed = smallerCanvas.toDataURL('image/jpeg', 0.55);
+          }
+        }
+        if (compressed.length > 950_000) {
+          reject(new Error(`${file.name} is too large to upload. Please choose a smaller photo.`));
+          return;
+        }
+        resolve(compressed);
+      };
+      image.src = String(reader.result || '');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const selectedFiles = Array.from(input.files || []) as File[];
+    input.value = ''; // allow selecting the same photo again after removing it
+    if (!selectedFiles.length) return;
+    const availableSlots = Math.max(0, 10 - photos.length);
+    if (availableSlots === 0) {
+      setPhotoError('You can add up to 10 photos per room.');
+      return;
+    }
+    const filesToProcess = selectedFiles.slice(0, availableSlots);
+    setIsProcessingPhotos(true);
+    setPhotoError('');
+    try {
+      const compressedPhotos: string[] = [];
+      for (const file of filesToProcess) compressedPhotos.push(await compressImage(file));
+      setPhotos((previous) => [...previous, ...compressedPhotos].slice(0, 10));
+      if (selectedFiles.length > availableSlots) {
+        setPhotoError(`Added ${availableSlots} photos. A room can have a maximum of 10.`);
+      }
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : 'Photo upload failed. Please try again.');
+    } finally {
+      setIsProcessingPhotos(false);
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files[0]) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setPhotos([...photos, event.target.result as string]);
-        }
-      };
-      reader.readAsDataURL(files[0]);
-    }
+  const removePhoto = (index: number) => setPhotos((previous) => previous.filter((_, i) => i !== index));
+  const movePhoto = (index: number, direction: -1 | 1) => {
+    setPhotos((previous) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= previous.length) return previous;
+      const reordered = [...previous];
+      [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+      return reordered;
+    });
   };
 
   const toggleAmenity = (amenity: string) => {
@@ -118,18 +193,31 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !location || !price || !contactPhone) return;
+    if (isSubmitting) return;
+    if (!title.trim() || !location.trim() || !price || !contactPhone.trim()) return;
+    if (photos.length === 0) {
+      setPhotoError('Add at least one real room photo before publishing.');
+      return;
+    }
+    if (isProcessingPhotos) {
+      setPhotoError('Please wait until your photos finish processing.');
+      return;
+    }
+    setPhotoError('');
+    setSubmitError('');
+    setIsSubmitting(true);
 
-    onSubmit({
+    try {
+      await onSubmit({
       title,
       city,
       location,
       price: Number(price),
       roomType,
       description,
-      photos: photos.length > 0 ? photos : [PRESET_PHOTOS[0]],
+      photos,
       amenities,
       contactName: contactName || 'Property Owner',
       contactPhone,
@@ -139,8 +227,13 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
       latitude: latitude != null ? Number(latitude) : undefined,
       longitude: longitude != null ? Number(longitude) : undefined,
       isExactLocation: isExactLocation && latitude != null && longitude != null,
-      ownerId: roomToEdit?.ownerId || currentUser?.id || 'owner-1'
-    });
+      ownerId: roomToEdit?.ownerId || currentUser?.id || ''
+      });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Could not save this room. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -211,7 +304,7 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
                 required
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                placeholder="e.g. Los Angeles"
+                placeholder="e.g. Kathmandu"
                 className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-800 focus:border-blue-600 focus:outline-none min-h-[44px]"
               />
             </div>
@@ -236,7 +329,7 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
                 min="50"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
-                placeholder="650"
+                placeholder="12000"
                 className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-800 focus:border-blue-600 focus:outline-none min-h-[44px]"
               />
             </div>
@@ -296,53 +389,52 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
 
           {/* Room Photos */}
           <div className="space-y-3">
-            <label className="text-xs font-bold text-slate-700">Room Photos</label>
-            
-            {/* Presets picker */}
-            <div className="space-y-1.5">
-              <span className="text-[11px] text-slate-500">Select Preset Images or Add URL:</span>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {PRESET_PHOTOS.map((url, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => {
-                      if (!photos.includes(url)) setPhotos([...photos, url]);
-                    }}
-                    className={`aspect-video rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
-                      photos.includes(url) ? 'border-blue-600 scale-95 shadow-2xs' : 'border-slate-200 opacity-70'
-                    }`}
-                  >
-                    <img src={url} alt="" className="w-full h-full object-cover" />
-                  </button>
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-xs font-bold text-slate-700">Real Room Photos * ({photos.length}/10)</label>
+              <span className="text-[11px] text-slate-500">First photo is the cover</span>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <label className={`flex-1 p-3 rounded-xl border border-dashed text-blue-700 text-xs font-semibold flex items-center justify-center gap-2 min-h-[48px] ${isProcessingPhotos ? 'bg-slate-100 border-slate-300 cursor-wait' : 'bg-blue-50 hover:bg-blue-100 border-blue-300 cursor-pointer'}`}>
+                <Upload className="w-4 h-4" />
+                <span>{isProcessingPhotos ? 'Processing photos…' : 'Choose multiple photos from gallery'}</span>
+                <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={isProcessingPhotos || photos.length >= 10} onChange={handleFileUpload} className="hidden" />
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={photoUrlInput}
+                  onChange={(e) => setPhotoUrlInput(e.target.value)}
+                  placeholder="Image URL (optional)"
+                  className="min-w-0 flex-1 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:border-blue-600 focus:outline-none min-h-[42px]"
+                />
+                <button type="button" onClick={handleAddPhoto} className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold min-h-[42px]">Add URL</button>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">Select up to 10 photos at once. Photos are resized on your phone before saving to keep uploads smaller.</p>
+            {photoError && <p role="alert" className="rounded-lg bg-red-50 border border-red-200 p-2.5 text-xs text-red-700">{photoError}</p>}
+            {photos.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {photos.map((photo, index) => (
+                  <div key={`${index}-${photo.slice(0, 32)}`} className={`relative rounded-xl overflow-hidden border-2 bg-slate-100 ${index === 0 ? 'border-blue-600' : 'border-slate-200'}`}>
+                    <img src={photo} alt={`Room photo ${index + 1}`} className="w-full aspect-[4/3] object-cover" />
+                    {index === 0 && <span className="absolute top-1 left-1 rounded-full bg-blue-600 text-white px-2 py-1 text-[10px] font-bold flex items-center gap-1"><Star className="w-3 h-3 fill-current" /> Cover</span>}
+                    <div className="flex items-center justify-between gap-1 p-1.5 bg-white">
+                      <span className="text-[10px] text-slate-500">Photo {index + 1}</span>
+                      <div className="flex items-center gap-1">
+                        <button type="button" disabled={index === 0} onClick={() => movePhoto(index, -1)} aria-label="Move photo left" className="p-1 rounded bg-slate-100 disabled:opacity-30"><ArrowUp className="w-3 h-3" /></button>
+                        <button type="button" disabled={index === photos.length - 1} onClick={() => movePhoto(index, 1)} aria-label="Move photo right" className="p-1 rounded bg-slate-100 disabled:opacity-30"><ArrowDown className="w-3 h-3" /></button>
+                        <button type="button" onClick={() => removePhoto(index)} aria-label="Remove photo" className="p-1 rounded bg-red-50 text-red-600"><Trash2 className="w-3 h-3" /></button>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
-            </div>
-
-            {/* Custom URL or upload */}
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="url"
-                value={photoUrlInput}
-                onChange={(e) => setPhotoUrlInput(e.target.value)}
-                placeholder="Or paste image URL (https://...)"
-                className="flex-1 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:border-blue-600 focus:outline-none min-h-[42px]"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleAddPhoto}
-                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer min-h-[42px] flex items-center justify-center"
-                >
-                  Add URL
-                </button>
-                <label className="flex-1 sm:flex-none p-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer min-h-[42px]">
-                  <Upload className="w-4 h-4" />
-                  <span>Upload</span>
-                  <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
-                </label>
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-500">
+                <ImageIcon className="w-7 h-7 mx-auto mb-2 text-slate-400" />
+                No room photos selected yet. Upload real photos to publish this listing.
               </div>
-            </div>
+            )}
           </div>
 
           {/* Amenities Checklist */}
@@ -390,7 +482,7 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
                   required
                   value={contactPhone}
                   onChange={(e) => setContactPhone(e.target.value)}
-                  placeholder="+1 (555) 000-2222"
+                  placeholder="98XXXXXXXX"
                   className="w-full p-2.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 min-h-[40px]"
                 />
               </div>
@@ -410,12 +502,14 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
                   type="text"
                   value={contactWhatsapp}
                   onChange={(e) => setContactWhatsapp(e.target.value)}
-                  placeholder="+1 (555) 000-2222"
+                  placeholder="98XXXXXXXX"
                   className="w-full p-2.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 min-h-[40px]"
                 />
               </div>
             </div>
           </div>
+
+          {submitError && <p role="alert" className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">{submitError}</p>}
 
           {/* Submit CTA */}
           <div className="flex gap-2 sm:gap-3 pt-3 border-t border-slate-100">
@@ -428,9 +522,10 @@ export const AddRoomModal: React.FC<AddRoomModalProps> = ({
             </button>
             <button
               type="submit"
+              disabled={isProcessingPhotos || isSubmitting}
               className="flex-1 py-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-md shadow-blue-200 cursor-pointer min-h-[44px]"
             >
-              {roomToEdit ? 'Save Listing Changes' : 'Publish Room Listing'}
+              {isProcessingPhotos ? 'Processing Photos…' : isSubmitting ? 'Saving Room…' : roomToEdit ? 'Save Listing Changes' : 'Publish Room Listing'}
             </button>
           </div>
         </form>

@@ -15,7 +15,10 @@ import {
   Sparkles,
   RefreshCw,
   MapPin,
-  AlertCircle
+  AlertCircle,
+  Share2,
+  Copy,
+  Check
 } from 'lucide-react';
 
 interface OwnerDashboardProps {
@@ -45,6 +48,32 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   const totalViews = myRooms.reduce((acc, curr) => acc + (curr.viewsCount || 0), 0);
 
   const [activeTab, setActiveTab] = useState<'rooms' | 'inquiries'>('rooms');
+  const [profileCopied, setProfileCopied] = useState(false);
+
+  const catalogueUrl = `${window.location.origin}/?agent=${encodeURIComponent(currentUser.id)}`;
+  const copyCatalogueLink = async () => {
+    try {
+      await navigator.clipboard.writeText(catalogueUrl);
+      setProfileCopied(true);
+      window.setTimeout(() => setProfileCopied(false), 2200);
+    } catch {
+      window.prompt('Copy your public room catalogue link:', catalogueUrl);
+    }
+  };
+
+  const shareRoomAd = async (room: Room) => {
+    const url = `${window.location.origin}/?room=${encodeURIComponent(room.id)}`;
+    const text = `${room.title}\n${room.location}, ${room.city}\nRs. ${Number(room.price).toLocaleString('en-IN')} per month\nStatus: ${room.status}\nContact: ${room.contactPhone}\nView room: ${url}`;
+    try {
+      if (navigator.share) await navigator.share({ title: room.title, text, url });
+      else { await navigator.clipboard.writeText(text); window.alert('Room advertisement copied. Paste it into WhatsApp, Facebook, or Messenger.'); }
+    } catch (error) {
+      if ((error as Error)?.name !== 'AbortError') {
+        try { await navigator.clipboard.writeText(text); window.alert('Room advertisement copied.'); }
+        catch { window.prompt('Copy this room advertisement:', text); }
+      }
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8 text-slate-800">
@@ -92,6 +121,20 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             <p className="text-3xl font-black text-blue-600 mt-1">{totalViews}</p>
           </div>
         </div>
+      </div>
+
+      {/* Agent's public catalogue: one link for all rooms */}
+      <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="p-3 rounded-2xl bg-white border border-amber-200 text-amber-700"><Share2 className="w-5 h-5" /></div>
+          <div>
+            <h2 className="font-extrabold text-slate-900">Your public room catalogue</h2>
+            <p className="text-sm text-slate-600 mt-1 max-w-2xl">Share one link with renters. They can browse all your listings and open each room directly—no need to send every listing separately.</p>
+          </div>
+        </div>
+        <button onClick={copyCatalogueLink} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-full bg-slate-900 hover:bg-slate-700 text-white px-5 py-3 text-sm font-bold">
+          {profileCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}{profileCopied ? 'Catalogue link copied' : 'Copy my catalogue link'}
+        </button>
       </div>
 
       {/* Tabs Switcher */}
@@ -223,6 +266,14 @@ export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                           className="px-3 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
                         >
                           View
+                        </button>
+                        <button
+                          onClick={() => shareRoomAd(room)}
+                          className="p-2 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 cursor-pointer"
+                          title="Share ready-made room advertisement"
+                          aria-label={`Share ${room.title}`}
+                        >
+                          <Share2 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => onDeleteRoom(room.id)}

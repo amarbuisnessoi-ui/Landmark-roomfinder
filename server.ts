@@ -1043,6 +1043,9 @@ async function startServer() {
       }
 
       const validPhotos = validatePhotosArray(photos);
+      if (validPhotos.length === 0) {
+        return res.status(400).json({ error: 'Add at least one valid room photo. Please select your photos again and retry.' });
+      }
       const validAmenities = Array.isArray(amenities)
         ? amenities.map((a: any) => sanitizeText(String(a))).filter(Boolean)
         : ['WiFi'];
@@ -1175,6 +1178,9 @@ async function startServer() {
       }
 
       const validPhotos = photos !== undefined ? validatePhotosArray(photos) : JSON.parse(existing.photos);
+      if (photos !== undefined && validPhotos.length === 0) {
+        return res.status(400).json({ error: 'No valid room photos were received. Please select your photos again and retry.' });
+      }
       const validAmenities = amenities !== undefined && Array.isArray(amenities)
         ? amenities.map((a: any) => sanitizeText(String(a)))
         : JSON.parse(existing.amenities);

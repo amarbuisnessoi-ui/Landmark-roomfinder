@@ -14,6 +14,7 @@ import { Footer } from './components/Footer';
 import { InteractiveMap } from './components/InteractiveMap';
 import { RoommateHub } from './components/RoommateHub';
 import { CampaignLanding } from './components/CampaignLanding';
+import { AgentPublicPage } from './components/AgentPublicPage';
 import { Building2, Sparkles, LayoutGrid, Map as MapIcon, Columns } from 'lucide-react';
 
 export default function App() {
@@ -53,6 +54,12 @@ export default function App() {
       await api.trackView();
       const roomsData = await api.getRooms();
       setRooms(roomsData);
+      const initialParams = new URLSearchParams(window.location.search);
+      const sharedRoomId = initialParams.get('room');
+      if (sharedRoomId) {
+        const sharedRoom = roomsData.find((room) => room.id === sharedRoomId);
+        if (sharedRoom) setSelectedRoom(sharedRoom);
+      }
 
       // Check active user session
       const user = await api.getCurrentUser();
@@ -197,7 +204,18 @@ export default function App() {
   // Room Select Details
   const handleSelectRoom = (room: Room) => {
     setSelectedRoom(room);
+    const params = new URLSearchParams(window.location.search);
+    params.set('room', room.id);
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
     api.trackView(room.id);
+  };
+
+  const handleCloseRoom = () => {
+    setSelectedRoom(null);
+    const params = new URLSearchParams(window.location.search);
+    params.delete('room');
+    const query = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
   };
 
   // Create or Update Room (Owner / Admin)
@@ -219,7 +237,7 @@ export default function App() {
       setRoomToEdit(null);
       loadInitialData();
     } catch (err: any) {
-      alert(err.message || 'Failed to save room.');
+      throw new Error(err?.message || 'Failed to save room. Please check your connection and try again.');
     }
   };
 
@@ -323,6 +341,17 @@ export default function App() {
   const favoriteRoomsList = rooms.filter((r) => favorites.includes(r.id));
 
   if (window.location.pathname === '/spread' || window.location.pathname.startsWith('/spread/')) return <CampaignLanding />;
+
+  const publicAgentId = new URLSearchParams(window.location.search).get('agent');
+  if (publicAgentId) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+        <AgentPublicPage agentId={publicAgentId} rooms={rooms} onSelectRoom={handleSelectRoom} />
+        {selectedRoom && <RoomDetailModal room={selectedRoom} onClose={handleCloseRoom} currentUser={currentUser} onSendInquiry={handleSendInquiry} onUpdateStatus={handleUpdateStatus} onDeleteRoom={handleDeleteRoom} />}
+        {toastMessage && <div className="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-xl">{toastMessage}</div>}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
@@ -540,7 +569,7 @@ export default function App() {
       {selectedRoom && (
         <RoomDetailModal
           room={selectedRoom}
-          onClose={() => setSelectedRoom(null)}
+          onClose={handleCloseRoom}
           currentUser={currentUser}
           onSendInquiry={handleSendInquiry}
           onUpdateStatus={handleUpdateStatus}
